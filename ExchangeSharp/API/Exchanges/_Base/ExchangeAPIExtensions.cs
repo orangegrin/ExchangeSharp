@@ -85,81 +85,84 @@ namespace ExchangeSharp
                 switch (api.WebSocketOrderBookType)
                 {
                     case WebSocketOrderBookType.DeltasOnly:
-                    {
-                        // Fetch an initial book the first time and apply deltas on top
-                        // send these exchanges scathing support tickets that they should send
-                        // the full book for the first web socket callback message
-                        Queue<ExchangeOrderBook> partialOrderBookQueue;
-                        bool requestFullOrderBook = false;
-
-                        // attempt to find the right queue to put the partial order book in to be processed later
-                        lock (partialOrderBookQueues)
                         {
-                            if (!partialOrderBookQueues.TryGetValue(newOrderBook.MarketSymbol, out partialOrderBookQueue))
+                            // Fetch an initial book the first time and apply deltas on top
+                            // send these exchanges scathing support tickets that they should send
+                            // the full book for the first web socket callback message
+                            Queue<ExchangeOrderBook> partialOrderBookQueue;
+                            bool requestFullOrderBook = false;
+
+                            // attempt to find the right queue to put the partial order book in to be processed later
+                            lock (partialOrderBookQueues)
                             {
-                                // no queue found, make a new one
-                                partialOrderBookQueues[newOrderBook.MarketSymbol] = partialOrderBookQueue = new Queue<ExchangeOrderBook>();
-                                requestFullOrderBook = !foundFullBook;
+                                if (!partialOrderBookQueues.TryGetValue(newOrderBook.MarketSymbol, out partialOrderBookQueue))
+                                {
+                                    // no queue found, make a new one
+                                    partialOrderBookQueues[newOrderBook.MarketSymbol] = partialOrderBookQueue = new Queue<ExchangeOrderBook>();
+                                    requestFullOrderBook = !foundFullBook;
+                                }
+
+                                // always enqueue the partial order book, they get dequeued down below
+                                partialOrderBookQueue.Enqueue(newOrderBook);
                             }
 
-                            // always enqueue the partial order book, they get dequeued down below
-                            partialOrderBookQueue.Enqueue(newOrderBook);
-                        }
-
-                        // request the entire order book if we need it
-                        if (requestFullOrderBook)
-                        {
-                            fullOrderBook = await api.GetOrderBookAsync(newOrderBook.MarketSymbol, maxCount);
-                            fullOrderBook.MarketSymbol = newOrderBook.MarketSymbol;
-                            fullBooks[newOrderBook.MarketSymbol] = fullOrderBook;
-                        }
-                        else if (!foundFullBook)
-                        {
-                            // we got a partial book while the full order book was being requested
-                            // return out, the full order book loop will process this item in the queue
-                            return;
-                        }
-                        // else new partial book with full order book available, will get dequeued below
-
-                        // check if any old books for this symbol, if so process them first
-                        // lock dictionary of queues for lookup only
-                        lock (partialOrderBookQueues)
-                        {
-                            partialOrderBookQueues.TryGetValue(newOrderBook.MarketSymbol, out partialOrderBookQueue);
-                        }
-
-                        if (partialOrderBookQueue != null)
-                        {
-                            // lock the individual queue for processing, fifo queue
-                            lock (partialOrderBookQueue)
+                            // request the entire order book if we need it
+                            if (requestFullOrderBook)
                             {
-                                while (partialOrderBookQueue.Count != 0)
+                                fullOrderBook = await api.GetOrderBookAsync(newOrderBook.MarketSymbol, maxCount);
+                                fullOrderBook.MarketSymbol = newOrderBook.MarketSymbol;
+                                fullBooks[newOrderBook.MarketSymbol] = fullOrderBook;
+                            }
+                            else if (!foundFullBook)
+                            {
+                                // we got a partial book while the full order book was being requested
+                                // return out, the full order book loop will process this item in the queue
+                                return;
+                            }
+                            // else new partial book with full order book available, will get dequeued below
+
+                            // check if any old books for this symbol, if so process them first
+                            // lock dictionary of queues for lookup only
+                            lock (partialOrderBookQueues)
+                            {
+                                partialOrderBookQueues.TryGetValue(newOrderBook.MarketSymbol, out partialOrderBookQueue);
+                            }
+
+                            if (partialOrderBookQueue != null)
+                            {
+                                // lock the individual queue for processing, fifo queue
+                                lock (partialOrderBookQueue)
                                 {
-                                    updateOrderBook(fullOrderBook, partialOrderBookQueue.Dequeue());
+                                    while (partialOrderBookQueue.Count != 0)
+                                    {
+                                        updateOrderBook(fullOrderBook, partialOrderBookQueue.Dequeue());
+                                    }
                                 }
                             }
                         }
-                    } break;
+                        break;
 
                     case WebSocketOrderBookType.FullBookFirstThenDeltas:
-                    {
-                        // First response from exchange will be the full order book.
-                        // Subsequent updates will be deltas, at least some exchanges have their heads on straight
-                        if (!foundFullBook)
                         {
-                            fullBooks[newOrderBook.MarketSymbol] = fullOrderBook = newOrderBook;
+                            // First response from exchange will be the full order book.
+                            // Subsequent updates will be deltas, at least some exchanges have their heads on straight
+                            if (!foundFullBook)
+                            {
+                                fullBooks[newOrderBook.MarketSymbol] = fullOrderBook = newOrderBook;
+                            }
+                            else
+                            {
+                                updateOrderBook(fullOrderBook, newOrderBook);
+                            }
                         }
-                        else
-                        {
-                            updateOrderBook(fullOrderBook, newOrderBook);
-                        }
-                    } break;
+                        break;
 
                     case WebSocketOrderBookType.FullBookAlways:
-                    {
-                        // Websocket always returns full order book, WTF...?
-                        fullBooks[newOrderBook.MarketSymbol] = fullOrderBook = newOrderBook;
-                    } break;
+                        {
+                            // Websocket always returns full order book, WTF...?
+                            fullBooks[newOrderBook.MarketSymbol] = fullOrderBook = newOrderBook;
+                        }
+                        break;
                 }
 
                 fullOrderBook.LastUpdatedUtc = CryptoUtility.UtcNow;
@@ -502,7 +505,6 @@ namespace ExchangeSharp
             }
             return trade;
         }
-
         /// <summary>
         /// Parse volume from JToken
         /// </summary>

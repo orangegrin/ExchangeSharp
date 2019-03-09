@@ -239,14 +239,28 @@ namespace ExchangeSharp
                      return Task.CompletedTask;
                  }
                  //{"success":true,"request":{"op":"authKeyExpires","args":["2xrwtDdMimp5Oi3F6oSmtsew",1552157533,"1665aedbd293e435fafbfaba2e5475f882bae9228bab0f29d9f3b5136d073294"]}}
-                 if (token["request"] != null && token["request"]["op"].ToString() == "authKeyExpires")
+                 if (token["request"] != null && token["request"]["op"].ToStringInvariant() == "authKeyExpires")
                  {
                      //{ "op": "subscribe", "args": ["order"]}
                      _socket.SendMessageAsync(new { op = "subscribe", args = "order" });
                      return Task.CompletedTask;
                  }
-
+                 if (token["table"] == null)
+                 {
+                     return Task.CompletedTask;
+                 }
                  //{ "table":"order","action":"insert","data":[{ "orderID":"b48f4eea-5320-cc06-68f3-d80d60896e31","clOrdID":"","clOrdLinkID":"","account":954891,"symbol":"XBTUSD","side":"Buy","simpleOrderQty":null,"orderQty":100,"price":3850,"displayQty":null,"stopPx":null,"pegOffsetValue":null,"pegPriceType":"","currency":"USD","settlCurrency":"XBt","ordType":"Limit","timeInForce":"GoodTillCancel","execInst":"ParticipateDoNotInitiate","contingencyType":"","exDestination":"XBME","ordStatus":"New","triggered":"","workingIndicator":false,"ordRejReason":"","simpleLeavesQty":null,"leavesQty":100,"simpleCumQty":null,"cumQty":0,"avgPx":null,"multiLegReportingType":"SingleSecurity","text":"Submission from www.bitmex.com","transactTime":"2019-03-09T19:24:21.789Z","timestamp":"2019-03-09T19:24:21.789Z"}]}
+                 var action = token["action"].ToStringInvariant();
+                 JArray data = token["data"] as JArray;
+                 foreach (var t in data)
+                 {
+                     var marketSymbol = t["symbol"].ToStringInvariant();
+                     var order = ParseOrder(t);
+                     callback(order);
+                     //callback(new KeyValuePair<string, ExchangeTrade>(marketSymbol, t.ParseTrade("size", "price", "side", "timestamp", TimestampType.Iso8601, "trdMatchID")));
+
+                 }
+                 
                  Console.WriteLine(str);
                  return Task.CompletedTask;
              }, async (_socket) =>
