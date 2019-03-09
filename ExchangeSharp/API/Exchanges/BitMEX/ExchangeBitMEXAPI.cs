@@ -195,7 +195,7 @@ namespace ExchangeSharp
 
             List<ExchangeMarket> markets = new List<ExchangeMarket>();
             JToken allSymbols = await MakeJsonRequestAsync<JToken>("/instrument?count=500&reverse=false");
-			foreach (JToken marketSymbolToken in allSymbols)
+            foreach (JToken marketSymbolToken in allSymbols)
             {
                 var market = new ExchangeMarket
                 {
@@ -224,6 +224,50 @@ namespace ExchangeSharp
             return markets;
         }
 
+        #region WebSocket APIs
+        protected override IWebSocket OnGetOrderDetailsWebSocket(Action<ExchangeOrderResult> callback)
+        {
+            //return base.OnGetOrderDetailsWebSocket(callback);
+
+            return ConnectWebSocket(string.Empty, (_socket, msg) =>
+             {
+                 var str = msg.ToStringFromUTF8();
+                 JToken token = JToken.Parse(str);
+                 if (token["error"] != null)
+                 {
+                     Logger.Info(token["error"].ToStringInvariant());
+                     return Task.CompletedTask;
+                 }
+                 //{"success":true,"request":{"op":"authKeyExpires","args":["2xrwtDdMimp5Oi3F6oSmtsew",1552157533,"1665aedbd293e435fafbfaba2e5475f882bae9228bab0f29d9f3b5136d073294"]}}
+                 if (token["request"] != null && token["request"]["op"].ToString() == "authKeyExpires")
+                 {
+                     //{ "op": "subscribe", "args": ["order"]}
+                     _socket.SendMessageAsync(new { op = "subscribe", args = "order" });
+                     return Task.CompletedTask;
+                 }
+
+                 //{ "table":"order","action":"insert","data":[{ "orderID":"b48f4eea-5320-cc06-68f3-d80d60896e31","clOrdID":"","clOrdLinkID":"","account":954891,"symbol":"XBTUSD","side":"Buy","simpleOrderQty":null,"orderQty":100,"price":3850,"displayQty":null,"stopPx":null,"pegOffsetValue":null,"pegPriceType":"","currency":"USD","settlCurrency":"XBt","ordType":"Limit","timeInForce":"GoodTillCancel","execInst":"ParticipateDoNotInitiate","contingencyType":"","exDestination":"XBME","ordStatus":"New","triggered":"","workingIndicator":false,"ordRejReason":"","simpleLeavesQty":null,"leavesQty":100,"simpleCumQty":null,"cumQty":0,"avgPx":null,"multiLegReportingType":"SingleSecurity","text":"Submission from www.bitmex.com","transactTime":"2019-03-09T19:24:21.789Z","timestamp":"2019-03-09T19:24:21.789Z"}]}
+                 Console.WriteLine(str);
+                 return Task.CompletedTask;
+             }, async (_socket) =>
+             {
+                 var payloadJSON = GeneratePayloadJSON();
+                 await _socket.SendMessageAsync(payloadJSON.Result);
+             });
+
+        }
+        private async Task<string> GeneratePayloadJSON()
+        {
+            object expires = await GenerateNonceAsync();
+            var message = "GET/realtime" + expires;
+            var signature = CryptoUtility.SHA256Sign(message, PrivateApiKey.ToUnsecureString());
+            Dictionary<string, object> payload = new Dictionary<string, object>
+                {
+                    { "op", "authKeyExpires"},
+                    { "args", new object[]{ PublicApiKey.ToUnsecureString(),expires, signature } }
+                };
+            return CryptoUtility.GetJsonForPayload(payload);
+        }
         protected override IWebSocket OnGetTradesWebSocket(Action<KeyValuePair<string, ExchangeTrade>> callback, params string[] marketSymbols)
         {
             /*
@@ -240,12 +284,12 @@ namespace ExchangeSharp
                 var str = msg.ToStringFromUTF8();
                 JToken token = JToken.Parse(str);
 
-				if (token["error"] != null)
-				{
-					Logger.Info(token["error"].ToStringInvariant());
-					return Task.CompletedTask;
-				}
-				else if (token["table"] == null)
+                if (token["error"] != null)
+                {
+                    Logger.Info(token["error"].ToStringInvariant());
+                    return Task.CompletedTask;
+                }
+                else if (token["table"] == null)
                 {
                     return Task.CompletedTask;
                 }
@@ -262,12 +306,12 @@ namespace ExchangeSharp
             {
                 if (marketSymbols == null || marketSymbols.Length == 0)
                 {
-		    await _socket.SendMessageAsync(new { op = "subscribe", args = "trade" });
-		}
-		else
-		{
-		    await _socket.SendMessageAsync(new { op = "subscribe", args = marketSymbols.Select(s => "trade:" + this.NormalizeMarketSymbol(s)).ToArray() });
-		}
+                    await _socket.SendMessageAsync(new { op = "subscribe", args = "trade" });
+                }
+                else
+                {
+                    await _socket.SendMessageAsync(new { op = "subscribe", args = marketSymbols.Select(s => "trade:" + this.NormalizeMarketSymbol(s)).ToArray() });
+                }
             });
         }
 
@@ -355,6 +399,7 @@ namespace ExchangeSharp
                 await _socket.SendMessageAsync(new { op = "subscribe", args = marketSymbols.Select(s => "orderBookL2:" + this.NormalizeMarketSymbol(s)).ToArray() });
             });
         }
+        #endregion
 
         protected override async Task<IEnumerable<MarketCandle>> OnGetCandlesAsync(string marketSymbol, int periodSeconds, DateTime? startDate = null, DateTime? endDate = null, int? limit = null)
         {
