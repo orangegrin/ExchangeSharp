@@ -18,6 +18,7 @@ namespace ExchangeSharp
         public string SubType { get; set; }
 
         private long webSocketId = 0;
+        private decimal basicUnit = 100;
 
         public ExchangeHBDMAPI()
         {
@@ -46,6 +47,10 @@ namespace ExchangeSharp
             return CryptoUtility.SecondsToPeriodStringLong(seconds);
         }
 
+        public override decimal AmountComplianceCheck(decimal amount)
+        {
+            return Math.Floor(amount * basicUnit) / basicUnit;
+        }
 
         #region Websocket API
         protected override IWebSocket OnGetOrderBookWebSocket(Action<ExchangeOrderBook> callback, int maxCount = 20, params string[] marketSymbols)
@@ -107,7 +112,7 @@ namespace ExchangeSharp
                 var ch = token["ch"].ToStringInvariant();
                 var sArray = ch.Split('.');
                 var marketSymbol = sArray[1].ToStringInvariant();
-                ExchangeOrderBook book = ExchangeAPIExtensions.ParseOrderBookFromJTokenArrays(token["tick"], maxCount: maxCount);
+                ExchangeOrderBook book = ExchangeAPIExtensions.ParseOrderBookFromJTokenArrays(token["tick"], maxCount: maxCount, basicUnit: basicUnit);
                 book.MarketSymbol = marketSymbol;
                 callback(book);
             }, async (_socket) =>
@@ -120,7 +125,7 @@ namespace ExchangeSharp
                 {
                     long id = System.Threading.Interlocked.Increment(ref webSocketId);
                     //var normalizedSymbol = NormalizeMarketSymbol(symbol);
-                    string channel = $"market.{symbol}.depth.step0";
+                    string channel = $"market.{symbol}.depth.step11";
                     await _socket.SendMessageAsync(new { sub = channel, id = "id" + id.ToStringInvariant() });
                 }
             });
