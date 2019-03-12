@@ -404,8 +404,8 @@ namespace ExchangeSharp
 
         public virtual string CurrenciesToExchangeMarketSymbol(string baseCurrency, string quoteCurrency)
         {
-            var symbol = MarketSymbolIsReversed 
-                       ? $"{quoteCurrency}{MarketSymbolSeparator}{baseCurrency}" 
+            var symbol = MarketSymbolIsReversed
+                       ? $"{quoteCurrency}{MarketSymbolSeparator}{baseCurrency}"
                        : $"{baseCurrency}{MarketSymbolSeparator}{quoteCurrency}";
 
             return MarketSymbolIsUppercase
@@ -789,7 +789,7 @@ namespace ExchangeSharp
             withdrawalRequest.Currency = NormalizeMarketSymbol(withdrawalRequest.Currency);
             return await OnWithdrawAsync(withdrawalRequest);
         }
-        
+
         /// <summary>
         /// Gets the withdraw history for a symbol
         /// </summary>
@@ -905,6 +905,16 @@ namespace ExchangeSharp
         {
             callback.ThrowIfNull(nameof(callback), "Callback must not be null");
             return OnGetCompletedOrderDetailsWebSocket(callback);
+        }
+
+        public virtual decimal PriceComplianceCheck(decimal price)
+        {
+            return price;
+        }
+
+        public virtual decimal AmountComplianceCheck(decimal amount)
+        {
+            return amount;
         }
 
         #endregion Web Socket API

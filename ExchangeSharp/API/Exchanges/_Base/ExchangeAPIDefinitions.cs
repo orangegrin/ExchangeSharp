@@ -97,6 +97,7 @@ namespace ExchangeSharp
         /// The type of web socket order book supported
         /// </summary>
         public WebSocketOrderBookType WebSocketOrderBookType { get; protected set; } = WebSocketOrderBookType.None;
+
     }
 
     // implement this and change the field name and value to the name of your exchange

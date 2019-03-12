@@ -188,6 +188,10 @@ namespace ExchangeSharp
         /// <param name="marketSymbol">Market symbol of the order to cancel (not required for most exchanges)</param>
         Task CancelOrderAsync(string orderId, string marketSymbol = null);
 
+        decimal PriceComplianceCheck(decimal price);
+
+        decimal AmountComplianceCheck(decimal amount);
+
         /// <summary>
         /// Get margin amounts available to trade, symbol / amount dictionary
         /// </summary>
@@ -208,7 +212,7 @@ namespace ExchangeSharp
         /// <param name="marketSymbol">Market Symbol</param>
         /// <returns>Close margin position result</returns>
         Task<ExchangeCloseMarginPositionResult> CloseMarginPositionAsync(string marketSymbol);
-         
+
         /// <summary>
         /// Get fees
         /// </summary>

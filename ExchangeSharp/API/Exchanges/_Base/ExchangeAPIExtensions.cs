@@ -313,13 +313,14 @@ namespace ExchangeSharp
             string asks = "asks",
             string bids = "bids",
             string sequence = "ts",
-            int maxCount = 100
+            int maxCount = 100,
+            decimal basicUnit = 1
         )
         {
             var book = new ExchangeOrderBook { SequenceId = token[sequence].ConvertInvariant<long>() };
             foreach (JArray array in token[asks])
             {
-                var depth = new ExchangeOrderPrice { Price = array[0].ConvertInvariant<decimal>(), Amount = array[1].ConvertInvariant<decimal>() };
+                var depth = new ExchangeOrderPrice { Price = array[0].ConvertInvariant<decimal>(), Amount = array[1].ConvertInvariant<decimal>() * basicUnit };
                 book.Asks[depth.Price] = depth;
                 if (book.Asks.Count == maxCount)
                 {
@@ -329,7 +330,7 @@ namespace ExchangeSharp
 
             foreach (JArray array in token[bids])
             {
-                var depth = new ExchangeOrderPrice { Price = array[0].ConvertInvariant<decimal>(), Amount = array[1].ConvertInvariant<decimal>() };
+                var depth = new ExchangeOrderPrice { Price = array[0].ConvertInvariant<decimal>(), Amount = array[1].ConvertInvariant<decimal>() * basicUnit };
                 book.Bids[depth.Price] = depth;
                 if (book.Bids.Count == maxCount)
                 {

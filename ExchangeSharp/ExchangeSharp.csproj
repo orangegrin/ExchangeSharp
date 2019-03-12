@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net472;netstandard2.0;netcoreapp2.0;netcoreapp2.1</TargetFrameworks>
+    <TargetFrameworks>net471;netstandard2.0;netcoreapp2.0;netcoreapp2.1</TargetFrameworks>
     <Copyright>Copyright 2017, Digital Ruby, LLC - www.digitalruby.com</Copyright>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
@@ -31,6 +31,66 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="API\Exchanges\Binance\**" />
+    <Compile Remove="API\Exchanges\BitBank\**" />
+    <Compile Remove="API\Exchanges\Bitfinex\**" />
+    <Compile Remove="API\Exchanges\Bithumb\**" />
+    <Compile Remove="API\Exchanges\Bitstamp\**" />
+    <Compile Remove="API\Exchanges\Bittrex\**" />
+    <Compile Remove="API\Exchanges\Bleutrade\**" />
+    <Compile Remove="API\Exchanges\Coinbase\**" />
+    <Compile Remove="API\Exchanges\Cryptopia\**" />
+    <Compile Remove="API\Exchanges\Gemini\**" />
+    <Compile Remove="API\Exchanges\Hitbtc\**" />
+    <Compile Remove="API\Exchanges\Kraken\**" />
+    <Compile Remove="API\Exchanges\Kucoin\**" />
+    <Compile Remove="API\Exchanges\LBank\**" />
+    <Compile Remove="API\Exchanges\Livecoin\**" />
+    <Compile Remove="API\Exchanges\Okex\**" />
+    <Compile Remove="API\Exchanges\Poloniex\**" />
+    <Compile Remove="API\Exchanges\TuxExchange\**" />
+    <Compile Remove="API\Exchanges\Yobit\**" />
+    <EmbeddedResource Remove="API\Exchanges\Binance\**" />
+    <EmbeddedResource Remove="API\Exchanges\BitBank\**" />
+    <EmbeddedResource Remove="API\Exchanges\Bitfinex\**" />
+    <EmbeddedResource Remove="API\Exchanges\Bithumb\**" />
+    <EmbeddedResource Remove="API\Exchanges\Bitstamp\**" />
+    <EmbeddedResource Remove="API\Exchanges\Bittrex\**" />
+    <EmbeddedResource Remove="API\Exchanges\Bleutrade\**" />
+    <EmbeddedResource Remove="API\Exchanges\Coinbase\**" />
+    <EmbeddedResource Remove="API\Exchanges\Cryptopia\**" />
+    <EmbeddedResource Remove="API\Exchanges\Gemini\**" />
+    <EmbeddedResource Remove="API\Exchanges\Hitbtc\**" />
+    <EmbeddedResource Remove="API\Exchanges\Kraken\**" />
+    <EmbeddedResource Remove="API\Exchanges\Kucoin\**" />
+    <EmbeddedResource Remove="API\Exchanges\LBank\**" />
+    <EmbeddedResource Remove="API\Exchanges\Livecoin\**" />
+    <EmbeddedResource Remove="API\Exchanges\Okex\**" />
+    <EmbeddedResource Remove="API\Exchanges\Poloniex\**" />
+    <EmbeddedResource Remove="API\Exchanges\TuxExchange\**" />
+    <EmbeddedResource Remove="API\Exchanges\Yobit\**" />
+    <None Remove="API\Exchanges\Binance\**" />
+    <None Remove="API\Exchanges\BitBank\**" />
+    <None Remove="API\Exchanges\Bitfinex\**" />
+    <None Remove="API\Exchanges\Bithumb\**" />
+    <None Remove="API\Exchanges\Bitstamp\**" />
+    <None Remove="API\Exchanges\Bittrex\**" />
+    <None Remove="API\Exchanges\Bleutrade\**" />
+    <None Remove="API\Exchanges\Coinbase\**" />
+    <None Remove="API\Exchanges\Cryptopia\**" />
+    <None Remove="API\Exchanges\Gemini\**" />
+    <None Remove="API\Exchanges\Hitbtc\**" />
+    <None Remove="API\Exchanges\Kraken\**" />
+    <None Remove="API\Exchanges\Kucoin\**" />
+    <None Remove="API\Exchanges\LBank\**" />
+    <None Remove="API\Exchanges\Livecoin\**" />
+    <None Remove="API\Exchanges\Okex\**" />
+    <None Remove="API\Exchanges\Poloniex\**" />
+    <None Remove="API\Exchanges\TuxExchange\**" />
+    <None Remove="API\Exchanges\Yobit\**" />
+  </ItemGroup>
 
   <ItemGroup>
     <None Remove="API\Exchanges\PoloWithdrawalFields.csv" />
@@ -72,6 +132,12 @@
     <Reference Include="System.Web" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Windows.Forms.DataVisualization" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="nlog.config">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <PropertyGroup Condition="'$(TargetFramework)' == 'net471'">
