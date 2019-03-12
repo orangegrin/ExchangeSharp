@@ -244,6 +244,7 @@ namespace ExchangeSharp
                 ExchangeOrderRequest closeOrder = order;
                 closeOrder.IsBuy = true;
                 ExchangeOrderResult downReturnResult = await m_OnPlaceOrderAsync(closeOrder,false);
+                //TODO 如果失败了平仓(不需貌似await)
             }
             if (openNum > 0)//开仓
             {
@@ -336,7 +337,6 @@ namespace ExchangeSharp
                 payload["execInst"] = execInst;
             }
         }
-
         private ExchangeOrderResult ParseOrder(JToken token,ExchangeOrderRequest orderRequest)
         {
             /*
@@ -358,7 +358,7 @@ ts
 ]}
             */
             ExchangeOrderResult result = new ExchangeOrderResult();
-            if (token["ts"]["statue"].ToString().Equals("ok"))
+            if (token["status"].ToString().Equals("ok"))
             {
                 result = new ExchangeOrderResult
                 {
