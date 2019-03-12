@@ -25,10 +25,10 @@ namespace ExchangeSharp
 {
     public sealed partial class ExchangeBitMEXAPI : ExchangeAPI
     {
-        //public override string BaseUrl { get; set; } = "https://www.bitmex.com/api/v1";
-        //public override string BaseUrlWebSocket { get; set; } = "wss://www.bitmex.com/realtime";
-        public override string BaseUrl { get; set; } = "https://testnet.bitmex.com/api/v1";
-        public override string BaseUrlWebSocket { get; set; } = "wss://testnet.bitmex.com/realtime";
+        public override string BaseUrl { get; set; } = "https://www.bitmex.com/api/v1";
+        public override string BaseUrlWebSocket { get; set; } = "wss://www.bitmex.com/realtime";
+        //public override string BaseUrl { get; set; } = "https://testnet.bitmex.com/api/v1";
+        //public override string BaseUrlWebSocket { get; set; } = "wss://testnet.bitmex.com/realtime";
 
         private SortedDictionary<long, decimal> dict_long_decimal = new SortedDictionary<long, decimal>();
         private SortedDictionary<decimal, long> dict_decimal_long = new SortedDictionary<decimal, long>();
@@ -601,34 +601,46 @@ namespace ExchangeSharp
             return ParseOrder(token);
         }
 
-        protected override async Task<ExchangeOrderResult[]> OnPlaceOrdersAsync(params ExchangeOrderRequest[] orders)
+        private async Task<ExchangeOrderResult[]> mOnPlaceOrdersAsync(string protocol = "POST", params ExchangeOrderRequest[] orders)
         {
             List<ExchangeOrderResult> results = new List<ExchangeOrderResult>();
             Dictionary<string, object> payload = await GetNoncePayloadAsync();
             List<Dictionary<string, object>> orderRequests = new List<Dictionary<string, object>>();
             foreach (ExchangeOrderRequest order in orders)
             {
-                if (!order.ExtraParameters.ContainsKey("orderID"))
+                Dictionary<string, object> subPayload = new Dictionary<string, object>();
+                AddOrderToPayload(order, subPayload);
+                orderRequests.Add(subPayload);
+            }
+            payload["orders"] = orderRequests;
+            JToken token = await MakeJsonRequestAsync<JToken>("/order/bulk", BaseUrl, payload, protocol);
+            foreach (JToken orderResultToken in token)
+            {
+                results.Add(ParseOrder(orderResultToken));
+            }
+            return results.ToArray();
+        }
+
+        protected override async Task<ExchangeOrderResult[]> OnPlaceOrdersAsync(params ExchangeOrderRequest[] orders)
+        {
+            List<ExchangeOrderResult> results = new List<ExchangeOrderResult>();
+            var postOrderRequests = new List<ExchangeOrderRequest>();
+            var putOrderRequests = new List<ExchangeOrderRequest>();
+            foreach (ExchangeOrderRequest order in orders)
+            {
+                if (order.ExtraParameters.ContainsKey("orderID"))
                 {
-                    var result = await OnPlaceOrderAsync(order);
-                    results.Add(result);
+                    putOrderRequests.Add(order);
                 }
                 else
                 {
-                    Dictionary<string, object> subPayload = new Dictionary<string, object>();
-                    AddOrderToPayload(order, subPayload);
-                    orderRequests.Add(subPayload);
+                    postOrderRequests.Add(order);
                 }
             }
-            if (orderRequests.Count > 0)
-            {
-                payload["orders"] = orderRequests;
-                JToken token = await MakeJsonRequestAsync<JToken>("/order/bulk", BaseUrl, payload, "PUT");
-                foreach (JToken orderResultToken in token)
-                {
-                    results.Add(ParseOrder(orderResultToken));
-                }
-            }
+            if (putOrderRequests.Count > 0)
+                results.AddRange(await mOnPlaceOrdersAsync("PUT", putOrderRequests.ToArray()));
+            if (postOrderRequests.Count > 0)
+                results.AddRange(await mOnPlaceOrdersAsync("POST", postOrderRequests.ToArray()));
             return results.ToArray();
         }
 
