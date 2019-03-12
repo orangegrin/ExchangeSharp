@@ -223,7 +223,7 @@ namespace ExchangeSharp
             }
             return markets;
         }
-
+        private Dictionary<string, ExchangeOrderResult> fullOrders = new Dictionary<string, ExchangeOrderResult>();
         #region WebSocket APIs
         protected override IWebSocket OnGetOrderDetailsWebSocket(Action<ExchangeOrderResult> callback)
         {
@@ -231,8 +231,10 @@ namespace ExchangeSharp
 
             return ConnectWebSocket(string.Empty, (_socket, msg) =>
              {
+
                  var str = msg.ToStringFromUTF8();
                  JToken token = JToken.Parse(str);
+
                  if (token["error"] != null)
                  {
                      Logger.Info(token["error"].ToStringInvariant());
@@ -263,11 +265,13 @@ namespace ExchangeSharp
                  return Task.CompletedTask;
              }, async (_socket) =>
              {
+                 fullOrders.Clear();
                  var payloadJSON = GeneratePayloadJSON();
                  await _socket.SendMessageAsync(payloadJSON.Result);
              });
 
         }
+
         private async Task<string> GeneratePayloadJSON()
         {
             object expires = await GenerateNonceAsync();
@@ -718,7 +722,25 @@ namespace ExchangeSharp
                     break;
             }
 
-            return result;
+            ExchangeOrderResult fullOrder;
+            if (fullOrders.TryGetValue(result.OrderId, out fullOrder))
+            {
+                if (result.Amount != 0)
+                    fullOrder.Amount = result.Amount;
+                if (result.Result != ExchangeAPIOrderResult.Error)
+                    fullOrder.Result = result.Result;
+                if (result.Price != 0)
+                    fullOrder.Price = result.Price;
+                if (result.OrderDate > fullOrder.OrderDate)
+                    fullOrder.OrderDate = result.OrderDate;
+            }
+            else
+            {
+                fullOrder = result;
+            }
+            fullOrders[result.OrderId] = fullOrder;
+
+            return fullOrder;
         }
 
 
