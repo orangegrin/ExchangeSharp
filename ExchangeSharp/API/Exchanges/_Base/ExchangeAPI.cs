@@ -111,9 +111,6 @@ namespace ExchangeSharp
         protected virtual IWebSocket OnGetPositionDetailsWebSocket(Action<ExchangeMarginPositionResult> callback) => throw new NotImplementedException();
         protected virtual IWebSocket OnGetCompletedOrderDetailsWebSocket(Action<ExchangeOrderResult> callback) => throw new NotImplementedException();
 
-        public virtual decimal PriceComplianceCheck(decimal price) => throw new NotImplementedException();
-        public virtual decimal AmountComplianceCheck(decimal amount) => throw new NotImplementedException();
-
         #endregion API implementation
 
         #region Protected methods
