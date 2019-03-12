@@ -243,13 +243,18 @@ namespace ExchangeSharp
             {
                 ExchangeOrderRequest closeOrder = order;
                 closeOrder.IsBuy = true;
-                returnResult = await m_OnPlaceOrderAsync(closeOrder,false);
+                ExchangeOrderResult downReturnResult = await m_OnPlaceOrderAsync(closeOrder,false);
             }
             if (openNum > 0)//开仓
             {
                 ExchangeOrderRequest closeOrder = order;
                 closeOrder.IsBuy = true;
                 returnResult = await m_OnPlaceOrderAsync(closeOrder, true);
+            }
+            else//如果刚刚好平仓，
+            {
+                returnResult = new ExchangeOrderResult();
+                returnResult.Amount = 0;
             }
             if(hadPosition)
             {
