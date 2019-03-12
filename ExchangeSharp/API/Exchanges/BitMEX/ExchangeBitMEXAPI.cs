@@ -260,7 +260,7 @@ namespace ExchangeSharp
                      //callback(new KeyValuePair<string, ExchangeTrade>(marketSymbol, t.ParseTrade("size", "price", "side", "timestamp", TimestampType.Iso8601, "trdMatchID")));
 
                  }
-                 
+
                  Console.WriteLine(str);
                  return Task.CompletedTask;
              }, async (_socket) =>
@@ -597,15 +597,26 @@ namespace ExchangeSharp
             List<Dictionary<string, object>> orderRequests = new List<Dictionary<string, object>>();
             foreach (ExchangeOrderRequest order in orders)
             {
-                Dictionary<string, object> subPayload = new Dictionary<string, object>();
-                AddOrderToPayload(order, subPayload);
-                orderRequests.Add(subPayload);
+                if (!order.ExtraParameters.ContainsKey("orderID"))
+                {
+                    var result = await OnPlaceOrderAsync(order);
+                    results.Add(result);
+                }
+                else
+                {
+                    Dictionary<string, object> subPayload = new Dictionary<string, object>();
+                    AddOrderToPayload(order, subPayload);
+                    orderRequests.Add(subPayload);
+                }
             }
-            payload["orders"] = orderRequests;
-            JToken token = await MakeJsonRequestAsync<JToken>("/order/bulk", BaseUrl, payload, "POST");
-            foreach (JToken orderResultToken in token)
+            if (orderRequests.Count > 0)
             {
-                results.Add(ParseOrder(orderResultToken));
+                payload["orders"] = orderRequests;
+                JToken token = await MakeJsonRequestAsync<JToken>("/order/bulk", BaseUrl, payload, "PUT");
+                foreach (JToken orderResultToken in token)
+                {
+                    results.Add(ParseOrder(orderResultToken));
+                }
             }
             return results.ToArray();
         }
@@ -620,6 +631,10 @@ namespace ExchangeSharp
             if (order.ExtraParameters.TryGetValue("execInst", out var execInst))
             {
                 payload["execInst"] = execInst;
+            }
+            if (order.ExtraParameters.TryGetValue("orderID", out var orderID))
+            {
+                payload["orderID"] = orderID;
             }
         }
 
