@@ -32,6 +32,10 @@ namespace ExchangeSharp
 
         private SortedDictionary<long, decimal> dict_long_decimal = new SortedDictionary<long, decimal>();
         private SortedDictionary<decimal, long> dict_decimal_long = new SortedDictionary<decimal, long>();
+        //private JToken PresentOrderDict = JToken.Parse("{\"table\":\"order\",\"data\":[]}");
+        private JArray presentOrderCache = JArray.Parse("[]");
+        private JToken PresentPositionDict = JToken.Parse("{\"table\":\"position\",\"data\":[]}");
+
 
         public ExchangeBitMEXAPI()
         {
@@ -51,12 +55,12 @@ namespace ExchangeSharp
 
         public override string ExchangeMarketSymbolToGlobalMarketSymbol(string marketSymbol)
         {
-            throw new NotImplementedException();
+            return marketSymbol;
         }
 
         public override string GlobalMarketSymbolToExchangeMarketSymbol(string marketSymbol)
         {
-            throw new NotImplementedException();
+            return marketSymbol;
         }
 
         protected override async Task ProcessRequestAsync(IHttpWebRequest request, Dictionary<string, object> payload)
@@ -225,6 +229,51 @@ namespace ExchangeSharp
         }
 
         #region WebSocket APIs
+        protected override IWebSocket OnGetPositionDetailsWebSocket(Action<ExchangeMarginPositionResult> callback)
+        {
+            //return base.OnGetOrderDetailsWebSocket(callback);
+
+            return ConnectWebSocket(string.Empty, (_socket, msg) =>
+            {
+                var str = msg.ToStringFromUTF8();
+                JToken token = JToken.Parse(str);
+                if (token["error"] != null)
+                {
+                    Logger.Info(token["error"].ToStringInvariant());
+                    return Task.CompletedTask;
+                }
+                //{"success":true,"request":{"op":"authKeyExpires","args":["2xrwtDdMimp5Oi3F6oSmtsew",1552157533,"1665aedbd293e435fafbfaba2e5475f882bae9228bab0f29d9f3b5136d073294"]}}
+                if (token["request"] != null && token["request"]["op"].ToStringInvariant() == "authKeyExpires")
+                {
+                    //{ "op": "subscribe", "args": ["order"]}
+                    _socket.SendMessageAsync(new { op = "subscribe", args = "position" });
+                    return Task.CompletedTask;
+                }
+                if (token["table"] == null)
+                {
+                    return Task.CompletedTask;
+                }
+                //{ "table":"order","action":"insert","data":[{ "orderID":"b48f4eea-5320-cc06-68f3-d80d60896e31","clOrdID":"","clOrdLinkID":"","account":954891,"symbol":"XBTUSD","side":"Buy","simpleOrderQty":null,"orderQty":100,"price":3850,"displayQty":null,"stopPx":null,"pegOffsetValue":null,"pegPriceType":"","currency":"USD","settlCurrency":"XBt","ordType":"Limit","timeInForce":"GoodTillCancel","execInst":"ParticipateDoNotInitiate","contingencyType":"","exDestination":"XBME","ordStatus":"New","triggered":"","workingIndicator":false,"ordRejReason":"","simpleLeavesQty":null,"leavesQty":100,"simpleCumQty":null,"cumQty":0,"avgPx":null,"multiLegReportingType":"SingleSecurity","text":"Submission from www.bitmex.com","transactTime":"2019-03-09T19:24:21.789Z","timestamp":"2019-03-09T19:24:21.789Z"}]}
+                var action = token["action"].ToStringInvariant();
+                JArray data = token["data"] as JArray;
+                foreach (var t in data)
+                {
+                    var marketSymbol = t["symbol"].ToStringInvariant();
+                    var position = ParsePosition(t);
+                    callback(position);
+                    //callback(new KeyValuePair<string, ExchangeTrade>(marketSymbol, t.ParseTrade("size", "price", "side", "timestamp", TimestampType.Iso8601, "trdMatchID")));
+
+                }
+
+                Console.WriteLine(str);
+                return Task.CompletedTask;
+            }, async (_socket) =>
+            {
+                var payloadJSON = GeneratePayloadJSON();
+                await _socket.SendMessageAsync(payloadJSON.Result);
+            });
+
+        }
         protected override IWebSocket OnGetOrderDetailsWebSocket(Action<ExchangeOrderResult> callback)
         {
             //return base.OnGetOrderDetailsWebSocket(callback);
@@ -252,16 +301,42 @@ namespace ExchangeSharp
                  //{ "table":"order","action":"insert","data":[{ "orderID":"b48f4eea-5320-cc06-68f3-d80d60896e31","clOrdID":"","clOrdLinkID":"","account":954891,"symbol":"XBTUSD","side":"Buy","simpleOrderQty":null,"orderQty":100,"price":3850,"displayQty":null,"stopPx":null,"pegOffsetValue":null,"pegPriceType":"","currency":"USD","settlCurrency":"XBt","ordType":"Limit","timeInForce":"GoodTillCancel","execInst":"ParticipateDoNotInitiate","contingencyType":"","exDestination":"XBME","ordStatus":"New","triggered":"","workingIndicator":false,"ordRejReason":"","simpleLeavesQty":null,"leavesQty":100,"simpleCumQty":null,"cumQty":0,"avgPx":null,"multiLegReportingType":"SingleSecurity","text":"Submission from www.bitmex.com","transactTime":"2019-03-09T19:24:21.789Z","timestamp":"2019-03-09T19:24:21.789Z"}]}
                  var action = token["action"].ToStringInvariant();
                  JArray data = token["data"] as JArray;
-                 foreach (var t in data)
+                 //JArray presentOrderCache = PresentOrderDict["data"] as JArray;
+                 if (action == "insert" || action == "partial")
                  {
-                     var marketSymbol = t["symbol"].ToStringInvariant();
-                     var order = ParseOrder(t);
-                     callback(order);
-                     //callback(new KeyValuePair<string, ExchangeTrade>(marketSymbol, t.ParseTrade("size", "price", "side", "timestamp", TimestampType.Iso8601, "trdMatchID")));
+                     foreach(JToken t in data)
+                     {
+                         presentOrderCache.Add(t);
 
+                     }
                  }
-                 
-                 Console.WriteLine(str);
+                 else if (action == "update")
+                 {
+                     //JArray tmpData;
+                     foreach (JToken t in data)
+                     {
+                         var orderID = t["orderID"].ToStringInvariant();
+                         JToken tmpitem=t;
+                         foreach (JToken po in presentOrderCache)
+                         {
+                             if (orderID == po["orderID"].ToStringInvariant()) {
+                                 //do  some update things
+                                 JObject poo = po.Value<JObject>();
+                                 List<string> keys = poo.Properties().Select(p => p.Name).ToList();
+
+                                 foreach (string k in keys)
+                                 {
+                                     po[k] = t[k];
+                                 }
+                                 callback(ParseOrder(po));
+                                
+                             }
+                         }
+                         
+                     }
+                 }
+
+                 //Console.WriteLine(presentOrderCache.ToString());
                  return Task.CompletedTask;
              }, async (_socket) =>
              {
@@ -285,12 +360,12 @@ namespace ExchangeSharp
         protected override IWebSocket OnGetTradesWebSocket(Action<KeyValuePair<string, ExchangeTrade>> callback, params string[] marketSymbols)
         {
             /*
-{"table":"trade","action":"partial","keys":[],
-"types":{"timestamp":"timestamp","symbol":"symbol","side":"symbol","size":"long","price":"float","tickDirection":"symbol","trdMatchID":"guid","grossValue":"long","homeNotional":"float","foreignNotional":"float"},
-"foreignKeys":{"symbol":"instrument","side":"side"},
-"attributes":{"timestamp":"sorted","symbol":"grouped"},
-"filter":{"symbol":"XBTUSD"},
-"data":[{"timestamp":"2018-07-06T08:31:53.333Z","symbol":"XBTUSD","side":"Buy","size":10000,"price":6520,"tickDirection":"PlusTick","trdMatchID":"a296312f-c9a4-e066-2f9e-7f4cf2751f0a","grossValue":153370000,"homeNotional":1.5337,"foreignNotional":10000}]}
+                {"table":"trade","action":"partial","keys":[],
+                "types":{"timestamp":"timestamp","symbol":"symbol","side":"symbol","size":"long","price":"float","tickDirection":"symbol","trdMatchID":"guid","grossValue":"long","homeNotional":"float","foreignNotional":"float"},
+                "foreignKeys":{"symbol":"instrument","side":"side"},
+                "attributes":{"timestamp":"sorted","symbol":"grouped"},
+                "filter":{"symbol":"XBTUSD"},
+                "data":[{"timestamp":"2018-07-06T08:31:53.333Z","symbol":"XBTUSD","side":"Buy","size":10000,"price":6520,"tickDirection":"PlusTick","trdMatchID":"a296312f-c9a4-e066-2f9e-7f4cf2751f0a","grossValue":153370000,"homeNotional":1.5337,"foreignNotional":10000}]}
              */
 
             return ConnectWebSocket(string.Empty, (_socket, msg) =>
@@ -332,9 +407,9 @@ namespace ExchangeSharp
         protected override IWebSocket OnGetOrderBookWebSocket(Action<ExchangeOrderBook> callback, int maxCount = 20, params string[] marketSymbols)
         {
             /*
-{"info":"Welcome to the BitMEX Realtime API.","version":"2018-06-29T18:05:14.000Z","timestamp":"2018-07-05T14:22:26.267Z","docs":"https://www.bitmex.com/app/wsAPI","limit":{"remaining":39}}
-{"success":true,"subscribe":"orderBookL2:XBTUSD","request":{"op":"subscribe","args":["orderBookL2:XBTUSD"]}}
-{"table":"orderBookL2","action":"update","data":[{"symbol":"XBTUSD","id":8799343000,"side":"Buy","size":350544}]}
+                {"info":"Welcome to the BitMEX Realtime API.","version":"2018-06-29T18:05:14.000Z","timestamp":"2018-07-05T14:22:26.267Z","docs":"https://www.bitmex.com/app/wsAPI","limit":{"remaining":39}}
+                {"success":true,"subscribe":"orderBookL2:XBTUSD","request":{"op":"subscribe","args":["orderBookL2:XBTUSD"]}}
+                {"table":"orderBookL2","action":"update","data":[{"symbol":"XBTUSD","id":8799343000,"side":"Buy","size":350544}]}
              */
 
             if (marketSymbols == null || marketSymbols.Length == 0)
@@ -626,43 +701,43 @@ namespace ExchangeSharp
         private ExchangeOrderResult ParseOrder(JToken token)
         {
             /*
-{[
-  {
-    "orderID": "b7b8518a-c0d8-028d-bb6e-d843f8f723a3",
-    "clOrdID": "",
-    "clOrdLinkID": "",
-    "account": 93592,
-    "symbol": "XBTUSD",
-    "side": "Buy",
-    "simpleOrderQty": null,
-    "orderQty": 1,
-    "price": 5500,
-    "displayQty": null,
-    "stopPx": null,
-    "pegOffsetValue": null,
-    "pegPriceType": "",
-    "currency": "USD",
-    "settlCurrency": "XBt",
-    "ordType": "Limit",
-    "timeInForce": "GoodTillCancel",
-    "execInst": "ParticipateDoNotInitiate",
-    "contingencyType": "",
-    "exDestination": "XBME",
-    "ordStatus": "Canceled",
-    "triggered": "",
-    "workingIndicator": false,
-    "ordRejReason": "",
-    "simpleLeavesQty": 0,
-    "leavesQty": 0,
-    "simpleCumQty": 0,
-    "cumQty": 0,
-    "avgPx": null,
-    "multiLegReportingType": "SingleSecurity",
-    "text": "Canceled: Canceled via API.\nSubmission from testnet.bitmex.com",
-    "transactTime": "2018-07-08T09:20:39.428Z",
-    "timestamp": "2018-07-08T11:35:05.334Z"
-  }
-]}
+                {[
+                  {
+                    "orderID": "b7b8518a-c0d8-028d-bb6e-d843f8f723a3",
+                    "clOrdID": "",
+                    "clOrdLinkID": "",
+                    "account": 93592,
+                    "symbol": "XBTUSD",
+                    "side": "Buy",
+                    "simpleOrderQty": null,
+                    "orderQty": 1,
+                    "price": 5500,
+                    "displayQty": null,
+                    "stopPx": null,
+                    "pegOffsetValue": null,
+                    "pegPriceType": "",
+                    "currency": "USD",
+                    "settlCurrency": "XBt",
+                    "ordType": "Limit",
+                    "timeInForce": "GoodTillCancel",
+                    "execInst": "ParticipateDoNotInitiate",
+                    "contingencyType": "",
+                    "exDestination": "XBME",
+                    "ordStatus": "Canceled",
+                    "triggered": "",
+                    "workingIndicator": false,
+                    "ordRejReason": "",
+                    "simpleLeavesQty": 0,
+                    "leavesQty": 0,
+                    "simpleCumQty": 0,
+                    "cumQty": 0,
+                    "avgPx": null,
+                    "multiLegReportingType": "SingleSecurity",
+                    "text": "Canceled: Canceled via API.\nSubmission from testnet.bitmex.com",
+                    "transactTime": "2018-07-08T09:20:39.428Z",
+                    "timestamp": "2018-07-08T11:35:05.334Z"
+                  }
+                ]}
             */
             ExchangeOrderResult result = new ExchangeOrderResult
             {
@@ -699,7 +774,79 @@ namespace ExchangeSharp
             return result;
         }
 
+        private ExchangeMarginPositionResult ParsePosition(JToken token)
+        {
+            /*
+            {
+                "account": 946961,
+                "symbol": "XBTUSD",
+                "currency": "XBt",
+                "openOrderBuyQty": 0,
+                "openOrderBuyCost": 0,
+                "execBuyQty": 2,
+                "execBuyCost": 51494,
+                "execQty": 1,
+                "execCost": -25744,
+                "execComm": 57,
+                "currentTimestamp": "2019-03-10T07:20:04.355Z",
+                "currentQty": 1,
+                "currentCost": -25744,
+                "currentComm": 57,
+                "unrealisedCost": -25747,
+                "grossOpenCost": 0,
+                "grossExecCost": 25747,
+                "isOpen": true,
+                "markPrice": 3884.59,
+                "markValue": -25743,
+                "riskValue": 25743,
+                "homeNotional": 0.00025743,
+                "foreignNotional": -1,
+                "posCost": -25747,
+                "posCost2": -25747,
+                "posInit": 258,
+                "posComm": 20,
+                "posMargin": 278,
+                "posMaint": 149,
+                "initMargin": 0,
+                "maintMargin": 282,
+                "realisedPnl": -60,
+                "unrealisedGrossPnl": 4,
+                "unrealisedPnl": 4,
+                "unrealisedPnlPcnt": 0.0002,
+                "unrealisedRoePcnt": 0.0155,
+                "avgCostPrice": 3884,
+                "avgEntryPrice": 3884,
+                "breakEvenPrice": 3887,
+                "marginCallPrice": 218.5,
+                "liquidationPrice": 218.5,
+                "bankruptPrice": 218.5,
+                "timestamp": "2019-03-10T07:20:04.355Z",
+                "lastPrice": 3884.59,
+                "lastValue": -25743
+             }
+             */
+            ExchangeMarginPositionResult position = new ExchangeMarginPositionResult
+            {
+                MarketSymbol = ExchangeMarketSymbolToGlobalMarketSymbol(token["symbol"].ToStringInvariant()),
+                Amount = token["currentQty"].ConvertInvariant<decimal>(),
+                Total = token["currentQty"].ConvertInvariant<decimal>(),
+                ProfitLoss = token["realisedPnl"].ConvertInvariant<decimal>(),
+                LendingFees =0,
+                BasePrice = token["avgCostPrice"].ConvertInvariant<decimal>(),
+                LiquidationPrice = token["liquidationPrice"].ConvertInvariant<decimal>()
+            };
+            position.Type = position.Amount > 0 ? "Buy" : "Sell";
 
+            return position;
+        }
+        public override decimal PriceComplianceCheck(decimal price)
+        {
+            return price;
+        }
+        public override decimal AmountComplianceCheck(decimal amount)
+        {
+            return amount;
+        }
         //private decimal GetInstrumentTickSize(ExchangeMarket market)
         //{
         //    if (market.MarketName == "XBTUSD")

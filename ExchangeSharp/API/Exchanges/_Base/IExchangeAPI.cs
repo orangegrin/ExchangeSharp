@@ -243,6 +243,13 @@ namespace ExchangeSharp
         IWebSocket GetOrderDetailsWebSocket(Action<ExchangeOrderResult> callback);
 
         /// <summary>
+        /// Get the details of all changed position via web socket
+        /// </summary>
+        /// <param name="callback">Callback</param>
+        /// <returns>Web socket, call Dispose to close</returns>
+        IWebSocket GetPositionDetailsWebSocket(Action<ExchangeMarginPositionResult> callback);
+
+        /// <summary>
         /// Get the details of all completed orders via web socket
         /// </summary>
         /// <param name="callback">Callback</param>
@@ -250,5 +257,13 @@ namespace ExchangeSharp
         IWebSocket GetCompletedOrderDetailsWebSocket(Action<ExchangeOrderResult> callback);
 
         #endregion Web Socket
+
+        #region util functions
+
+        decimal PriceComplianceCheck(decimal price);
+
+        decimal AmountComplianceCheck(decimal amount);
+
+        #endregion util functions
     }
 }

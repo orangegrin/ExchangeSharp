@@ -53,44 +53,44 @@ namespace ExchangeSharp
             return ConnectWebSocket(string.Empty, async (_socket, msg) =>
             {
                 /*
-{{
-  "id": "id1",
-  "status": "ok",
-  "subbed": "market.btcusdt.depth.step0",
-  "ts": 1526749164133
-}}
+                    {{
+                      "id": "id1",
+                      "status": "ok",
+                      "subbed": "market.btcusdt.depth.step0",
+                      "ts": 1526749164133
+                    }}
 
 
-{{
-  "ch": "market.btcusdt.depth.step0",
-  "ts": 1526749254037,
-  "tick": {
-    "bids": [
-      [
-        8268.3,
-        0.101
-      ],
-      [
-        8268.29,
-        0.8248
-      ],
+                    {{
+                      "ch": "market.btcusdt.depth.step0",
+                      "ts": 1526749254037,
+                      "tick": {
+                        "bids": [
+                          [
+                            8268.3,
+                            0.101
+                          ],
+                          [
+                            8268.29,
+                            0.8248
+                          ],
       
-    ],
-    "asks": [
-      [
-        8275.07,
-        0.1961
-      ],
+                        ],
+                        "asks": [
+                          [
+                            8275.07,
+                            0.1961
+                          ],
 	  
-      [
-        8337.1,
-        0.5803
-      ]
-    ],
-    "ts": 1526749254016,
-    "version": 7664175145
-  }
-}}
+                          [
+                            8337.1,
+                            0.5803
+                          ]
+                        ],
+                        "ts": 1526749254016,
+                        "version": 7664175145
+                      }
+                    }}
                  */
                 var str = msg.ToStringFromUTF8Gzip();
                 JToken token = JToken.Parse(str);
