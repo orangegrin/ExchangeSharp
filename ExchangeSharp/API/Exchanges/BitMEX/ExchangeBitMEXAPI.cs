@@ -25,10 +25,10 @@ namespace ExchangeSharp
 {
     public sealed partial class ExchangeBitMEXAPI : ExchangeAPI
     {
-        public override string BaseUrl { get; set; } = "https://www.bitmex.com/api/v1";
-        public override string BaseUrlWebSocket { get; set; } = "wss://www.bitmex.com/realtime";
-        //public override string BaseUrl { get; set; } = "https://testnet.bitmex.com/api/v1";
-        //public override string BaseUrlWebSocket { get; set; } = "wss://testnet.bitmex.com/realtime";
+        //public override string BaseUrl { get; set; } = "https://www.bitmex.com/api/v1";
+        //public override string BaseUrlWebSocket { get; set; } = "wss://www.bitmex.com/realtime";
+        public override string BaseUrl { get; set; } = "https://testnet.bitmex.com/api/v1";
+        public override string BaseUrlWebSocket { get; set; } = "wss://testnet.bitmex.com/realtime";
 
         private SortedDictionary<long, decimal> dict_long_decimal = new SortedDictionary<long, decimal>();
         private SortedDictionary<decimal, long> dict_decimal_long = new SortedDictionary<decimal, long>();
@@ -260,8 +260,6 @@ namespace ExchangeSharp
                      //callback(new KeyValuePair<string, ExchangeTrade>(marketSymbol, t.ParseTrade("size", "price", "side", "timestamp", TimestampType.Iso8601, "trdMatchID")));
 
                  }
-
-                 Console.WriteLine(str);
                  return Task.CompletedTask;
              }, async (_socket) =>
              {
@@ -578,8 +576,17 @@ namespace ExchangeSharp
         protected override async Task OnCancelOrderAsync(string orderId, string marketSymbol = null)
         {
             Dictionary<string, object> payload = await GetNoncePayloadAsync();
-            payload["orderID"] = orderId;
-            JToken token = await MakeJsonRequestAsync<JToken>("/order", BaseUrl, payload, "DELETE");
+            if (orderId == "all")
+            {
+                if (marketSymbol != null)
+                    payload["symbol"] = marketSymbol;
+                JToken token = await MakeJsonRequestAsync<JToken>("/order/all", BaseUrl, payload, "DELETE");
+            }
+            else
+            {
+                payload["orderID"] = orderId;
+                JToken token = await MakeJsonRequestAsync<JToken>("/order", BaseUrl, payload, "DELETE");
+            }
         }
 
         protected override async Task<ExchangeOrderResult> OnPlaceOrderAsync(ExchangeOrderRequest order)
