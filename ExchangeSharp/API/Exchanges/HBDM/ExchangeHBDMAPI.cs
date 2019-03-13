@@ -332,16 +332,15 @@ namespace ExchangeSharp
         {
 
             ///////////////////////TEST/////////////////
+            //currentPostionDic.Add(order.MarketSymbol, new ExchangeOrderResult
+            //{
+            //    Amount = 100,
+            //    AmountFilled = 0,
+            //    Price = 3888,
+            //    IsBuy = false,
+            //    MarketSymbol = order.MarketSymbol,
 
-            currentPostionDic.Add(order.MarketSymbol, new ExchangeOrderResult
-            {
-                Amount = 100,
-                AmountFilled = 0,
-                Price = 3888,
-                IsBuy = false,
-                MarketSymbol = order.MarketSymbol,
-
-            });
+            //});
             ///////////////////////TEST/////////////////
             if (order.OrderType == OrderType.Limit)
             {

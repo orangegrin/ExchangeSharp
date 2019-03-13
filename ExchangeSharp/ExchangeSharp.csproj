@@ -115,10 +115,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\exmple\Futures-CSharp-demo\REST-CSharp-demo\Huobi.Rest.CSharp.Demo\Huobi.Rest.CSharp.Demo.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
     <Compile Update="Properties\Resources\ExchangeSharpResources.Designer.cs">
       <DesignTime>True</DesignTime>
       <AutoGen>True</AutoGen>
