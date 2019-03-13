@@ -20,6 +20,9 @@
     <PackageTags>C# crypto cryptocurrency trade trader exchange sharp socket web socket websocket signalr secure APIAbucoins Binance Bitfinex Bithumb Bitstamp Bittrex Bleutrade Cryptopia Gdax Gemini Gitbtc Huobi Kraken Kucoin Livecoin Okex Poloniex TuxExchange Yobit</PackageTags>
     <RepositoryUrl>https://github.com/jjxtra/ExchangeSharp</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
+    <ApplicationIcon />
+    <OutputType>Library</OutputType>
+    <StartupObject />
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
@@ -109,6 +112,10 @@
     <PackageReference Include="Newtonsoft.Json" Version="11.0.2" />
     <PackageReference Include="NLog" Version="4.5.10" />
     <PackageReference Include="System.Configuration.ConfigurationManager" Version="4.5.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\exmple\Futures-CSharp-demo\REST-CSharp-demo\Huobi.Rest.CSharp.Demo\Huobi.Rest.CSharp.Demo.csproj" />
   </ItemGroup>
 
   <ItemGroup>

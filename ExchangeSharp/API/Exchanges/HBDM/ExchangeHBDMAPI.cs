@@ -2,8 +2,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
+
+using Newtonsoft.Json;
 
 namespace ExchangeSharp
 {
@@ -158,7 +159,165 @@ namespace ExchangeSharp
         }
         #endregion
 
+        public override async Task<ExchangeOrderResult> PlaceOrderAsync(ExchangeOrderRequest order)
+        {
+            // *NOTE* do not wrap in CacheMethodCall
+            await new SynchronizationContextRemover();
+            //order.MarketSymbol = NormalizeMarketSymbol(order.MarketSymbol);
+            return await OnPlaceOrderAsync(order);
+        }
         #region Rest API
+
+        protected override Uri ProcessRequestUrl(UriBuilder url, Dictionary<string, object> payload, string method)
+        {
+            if (CanMakeAuthenticatedRequest(payload))
+            {
+                // must sort case sensitive
+                var dict = new SortedDictionary<string, object>(StringComparer.Ordinal)
+                {
+                    ["Timestamp"] = CryptoUtility.UnixTimeStampToDateTimeMilliseconds(payload["nonce"].ConvertInvariant<long>()).ToString("s"),
+                    ["AccessKeyId"] = PublicApiKey.ToUnsecureString(),
+                    ["SignatureMethod"] = "HmacSHA256",
+                    ["SignatureVersion"] = "2"
+                };
+
+                if (method == "GET")
+                {
+                    foreach (var kv in payload)
+                    {
+                        dict.Add(kv.Key, kv.Value);
+                    }
+                }
+
+                string msg = CryptoUtility.GetFormForPayload(dict, false, false, false);
+                string toSign = $"{method}\n{url.Host}\n{url.Path}\n{msg}";
+
+                // calculate signature
+                var sign = CryptoUtility.SHA256SignBase64(toSign, PrivateApiKey.ToUnsecureBytesUTF8()).UrlEncode();
+
+                // append signature to end of message
+                msg += $"&Signature={sign}";
+
+                url.Query = msg;
+            }
+            return url.Uri;
+        }
+        protected override async Task ProcessRequestAsync(IHttpWebRequest request, Dictionary<string, object> payload)
+        {
+            if (CanMakeAuthenticatedRequest(payload))
+            {
+                if (request.Method == "POST")
+                {
+                    request.AddHeader("content-type", "application/json");
+                    payload.Remove("nonce");
+                    var msg = CryptoUtility.GetJsonForPayload(payload);
+                    await CryptoUtility.WriteToRequestAsync(request, msg);
+                }
+            }
+        }
+        #region 
+        /*
+
+        /// <summary>
+        /// 请求参数签名
+        /// </summary>
+        /// <param name="method">请求方法</param>
+        /// <param name="host">API域名</param>
+        /// <param name="resourcePath">资源地址</param>
+        /// <param name="parameters">请求参数</param>
+        /// <returns></returns>
+        private string GetSignatureStr(string method, string host, string resourcePath, string parameters)
+        {
+
+            var sign = string.Empty;
+            StringBuilder sb = new StringBuilder();
+            sb.Append(method.ToString().ToUpper()).Append("\n")
+                .Append(host).Append("\n")
+                .Append(resourcePath).Append("\n");
+            //参数排序
+            var paraArray = parameters.Split('&');
+            List<string> parametersList = new List<string>();
+            foreach (var item in paraArray)
+            {
+                parametersList.Add(item);
+            }
+            parametersList.Sort(delegate (string s1, string s2) { return string.CompareOrdinal(s1, s2); });
+            foreach (var item in parametersList)
+            {
+                sb.Append(item).Append("&");
+            }
+            sign = sb.ToString().TrimEnd('&');
+            //计算签名，将以下两个参数传入加密哈希函数
+            sign = CalculateSignature256(sign, PublicApiKey.ToString());
+            return UrlEncode(sign);
+        }
+        /// <summary>
+        /// Hmacsha256加密
+        /// </summary>
+        /// <param name="text"></param>
+        /// <param name="secretKey"></param>
+        /// <returns></returns>
+        private static string CalculateSignature256(string text, string secretKey)
+        {
+            using (var hmacsha256 = new HMACSHA256(Encoding.UTF8.GetBytes(secretKey)))
+            {
+                byte[] hashmessage = hmacsha256.ComputeHash(Encoding.UTF8.GetBytes(text));
+                return Convert.ToBase64String(hashmessage);
+            }
+        }
+        /// <summary>
+        /// 转义字符串
+        /// </summary>
+        /// <param name="str"></param>
+        /// <returns></returns>
+        public string UrlEncode(string str)
+        {
+            StringBuilder builder = new StringBuilder();
+            foreach (char c in str)
+            {
+                if (HttpUtility.UrlEncode(c.ToString(), Encoding.UTF8).Length > 1)
+                {
+                    builder.Append(HttpUtility.UrlEncode(c.ToString(), Encoding.UTF8).ToUpper());
+                }
+                else
+                {
+                    builder.Append(c);
+                }
+            }
+            return builder.ToString();
+        }
+        /// <summary>
+        /// Uri参数值进行转义
+        /// </summary>
+        /// <param name="parameters">参数字符串</param>
+        /// <returns></returns>
+        private string UriEncodeParameterValue(string parameters)
+        {
+            var sb = new StringBuilder();
+            var paraArray = parameters.Split('&');
+            var sortDic = new SortedDictionary<string, string>();
+            foreach (var item in paraArray)
+            {
+                var para = item.Split('=');
+                sortDic.Add(para.First(), UrlEncode(para.Last()));
+            }
+            foreach (var item in sortDic)
+            {
+                sb.Append(item.Key).Append("=").Append(item.Value).Append("&");
+            }
+            return sb.ToString().TrimEnd('&');
+        }
+        
+        /// <summary>
+        /// 获取通用签名参数
+        /// </summary>
+        /// <returns></returns>
+        private string GetCommonParameters()
+        {
+            return $"AccessKeyId={PublicApiKey.ToUnsecureString()}&SignatureMethod={"HmacSHA256"}&SignatureVersion={2}&Timestamp={DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss")}";
+        }
+        */
+        #endregion
         /// <summary>
         /// 如果操作有仓位，并且新操作和仓位反向，那么如果新仓位>当前仓位，平仓在开新仓位-老仓位。
         /// 否则  平掉对应老仓位数量的新仓位
@@ -171,6 +330,19 @@ namespace ExchangeSharp
         /// <returns></returns>
         protected override async Task<ExchangeOrderResult> OnPlaceOrderAsync(ExchangeOrderRequest order)
         {
+
+            ///////////////////////TEST/////////////////
+
+            currentPostionDic.Add(order.MarketSymbol, new ExchangeOrderResult
+            {
+                Amount = 100,
+                AmountFilled = 0,
+                Price = 3888,
+                IsBuy = false,
+                MarketSymbol = order.MarketSymbol,
+
+            });
+            ///////////////////////TEST/////////////////
             if (order.OrderType == OrderType.Limit)
             {
                 Logger.Error(new Exception("尚未实现限价单"));
@@ -182,6 +354,8 @@ namespace ExchangeSharp
             decimal price = order.Price;
             decimal amount = order.Amount;
             OrderType orderType = order.OrderType;
+
+            
             //如果没有仓位，或者平仓直接开仓
             ExchangeOrderResult currentPostion;
 
@@ -194,8 +368,9 @@ namespace ExchangeSharp
                 openNum = amount;
             }
             else
-            {   
-                if(currentPostion.IsBuy)
+            {
+                decimal currentPostionAmount = currentPostion.Amount / 100;
+                if (currentPostion.IsBuy)
                 {
                     if(side == Side.Buy)
                     {
@@ -205,14 +380,14 @@ namespace ExchangeSharp
                     else if (side == Side.Sell)
                     {
                         //如果当前仓位>=开仓位。平仓
-                        if(Math.Abs(currentPostion.Amount)>= amount)
+                        if(Math.Abs(currentPostionAmount) >= amount)
                         {
                             closeNum = amount;
                         }
                         else
                         {
-                            closeNum = Math.Abs(currentPostion.Amount);
-                            openNum = amount - Math.Abs(currentPostion.Amount);
+                            closeNum = Math.Abs(currentPostionAmount);
+                            openNum = amount - Math.Abs(currentPostionAmount);
                         }
                     }
                 }
@@ -221,14 +396,14 @@ namespace ExchangeSharp
                     if (side == Side.Buy)
                     {
                         //如果当前仓位>=开仓位。平仓
-                        if (Math.Abs(currentPostion.Amount) >= amount)
+                        if (Math.Abs(currentPostionAmount) >= amount)
                         {
                             closeNum = amount;
                         }
                         else
                         {
-                            closeNum = Math.Abs(currentPostion.Amount);
-                            openNum = amount - Math.Abs(currentPostion.Amount);
+                            closeNum = Math.Abs(currentPostionAmount);
+                            openNum = amount - Math.Abs(currentPostionAmount);
                         }
                     }
                     else if (side == Side.Sell)
@@ -242,15 +417,19 @@ namespace ExchangeSharp
             if (closeNum>0)//平仓
             {
                 ExchangeOrderRequest closeOrder = order;
-                closeOrder.IsBuy = true;
+                closeOrder.IsBuy = ! currentPostion.IsBuy;
+                closeOrder.Amount = closeNum;
                 ExchangeOrderResult downReturnResult = await m_OnPlaceOrderAsync(closeOrder,false);
+                downReturnResult.Amount = amount * 100;
                 //TODO 如果失败了平仓(不需貌似await)
             }
             if (openNum > 0)//开仓
             {
                 ExchangeOrderRequest closeOrder = order;
-                closeOrder.IsBuy = true;
+                //closeOrder.IsBuy = true;
+                order.Amount = openNum;
                 returnResult = await m_OnPlaceOrderAsync(closeOrder, true);
+                returnResult.Amount = amount * 100;
             }
             else//如果刚刚好平仓，
             {
@@ -266,8 +445,6 @@ namespace ExchangeSharp
                 currentPostionDic.Add(marketSymbol, returnResult);
             }
             return returnResult;
-
-
         }
 
         protected override async Task OnCancelOrderAsync(string orderId, string marketSymbol = null)
@@ -277,12 +454,120 @@ namespace ExchangeSharp
             JToken token = await MakeJsonRequestAsync<JToken>("/order", BaseUrl, payload, "DELETE");
         }
 
-        private async Task<ExchangeOrderResult> m_OnPlaceOrderAsync(ExchangeOrderRequest order,bool isOpen)
+        private async Task<ExchangeOrderResult> m_OnPlaceOrderAsync(ExchangeOrderRequest order, bool isOpen)
         {
             Dictionary<string, object> payload = await GetNoncePayloadAsync();
+            string addUrl = "/api/v1/contract_order";
             AddOrderToPayload(order, isOpen, payload);
-            JToken token = await MakeJsonRequestAsync<JToken>("/api/v1/contract_order", BaseUrl, payload, "POST");
-            return ParseOrder(token, order);
+            //HuobiApi api = new HuobiApi(PublicApiKey.ToUnsecureString(), "7f0a0c5c-24fd0bb9-eb64134f-2e1b6");
+            //OrderPlaceRequest req = new OrderPlaceRequest();
+            //req.volume = int.Parse( payload["volume"].ToString());
+            //req.direction = payload["direction"].ToString();
+            //req.price = int.Parse(payload["price"].ToString());
+            //req.offset = payload["offset"].ToString();
+            //req.lever_rate = int.Parse(payload["lever_rate"].ToString());
+            ////req.contract_code = "BTC181214";
+            //req.order_price_type = payload["order_price_type"].ToString();
+            //req.symbol = payload["symbol"].ToString();
+            //req.contract_type = payload["contract_type"].ToString();
+            //string result = api.OrderPlace(req);
+
+            JObject token = await MakeJsonRequestAsync<JObject>(addUrl, BaseUrl, payload, "POST");
+ 
+            JObject jo = JsonConvert.DeserializeObject<JObject>(token.Root.ToString());
+            return ParseOrder(jo, order);
+        }
+
+        private async Task<Dictionary<string, string>> OnGetAccountsAsync()
+        {
+            /*
+            {[
+  {
+    "id": 3274515,
+    "type": "spot",
+    "subtype": "",
+    "state": "working"
+  },
+  {
+    "id": 4267855,
+    "type": "margin",
+    "subtype": "btcusdt",
+    "state": "working"
+  },
+  {
+    "id": 3544747,
+    "type": "margin",
+    "subtype": "ethusdt",
+    "state": "working"
+  },
+  {
+    "id": 3274640,
+    "type": "otc",
+    "subtype": "",
+    "state": "working"
+  }
+]}
+ */
+            Dictionary<string, string> accounts = new Dictionary<string, string>();
+            var payload = await GetNoncePayloadAsync();
+            JToken data = await MakeJsonRequestAsync<JToken>("/account/accounts", PrivateUrlV1, payload);
+            foreach (var acc in data)
+            {
+                string key = acc["type"].ToStringInvariant() + "_" + acc["subtype"].ToStringInvariant();
+                accounts.Add(key, acc["id"].ToStringInvariant());
+            }
+            return accounts;
+        }
+        private async Task<string> GetAccountID(bool isMargin = false, string subtype = "")
+        {
+            var accounts = await OnGetAccountsAsync();
+            var key = "spot_";
+            if (isMargin)
+            {
+                key = "margin_" + subtype;
+            }
+            var account_id = accounts[key];
+            return account_id;
+        }
+        //private async Task<ExchangeOrderResult> m_OnPlaceOrderAsync(ExchangeOrderRequest order, bool isOpen)
+        //{
+        //    var account_id = await GetAccountID(order.IsMargin, order.MarketSymbol);
+
+        //    var payload = await GetNoncePayloadAsync();
+        //    payload.Add("account-id", account_id);
+        //    payload.Add("symbol", order.MarketSymbol);
+        //    payload.Add("type", order.IsBuy ? "buy" : "sell");
+        //    payload.Add("source", order.IsMargin ? "margin-api" : "api");
+
+        //    AddOrderToPayload(order, isOpen, payload);
+
+        //    order.ExtraParameters.CopyTo(payload);
+
+        //    JToken obj = await MakeJsonRequestAsync<JToken>("/api/v1/contract_order", PrivateUrlV1, payload, "POST");
+        //    //order.Amount = outputQuantity;
+        //    //order.Price = outputPrice;
+        //    return ParsePlaceOrder(obj, order);
+        //}
+        private ExchangeOrderResult ParsePlaceOrder(JToken token, ExchangeOrderRequest order)
+        {
+            /*
+              {
+                  "status": "ok",
+                  "data": "59378"
+                }
+            */
+            ExchangeOrderResult result = new ExchangeOrderResult
+            {
+                Amount = order.Amount,
+                Price = order.Price,
+                IsBuy = order.IsBuy,
+                OrderId = token.ToStringInvariant(),
+                MarketSymbol = order.MarketSymbol
+            };
+            result.AveragePrice = result.Price;
+            result.Result = ExchangeAPIOrderResult.Pending;
+
+            return result;
         }
 
         //protected override async Task<ExchangeOrderResult[]> OnPlaceOrdersAsync(params ExchangeOrderRequest[] orders)
@@ -330,14 +615,14 @@ namespace ExchangeSharp
             payload["volume"] = order.Amount;
             payload["direction"] = order.IsBuy ? "buy" : "sell"; ;
             payload["offset"] = isOpen? "open": "close";
-            payload["lever_rate"] = 25;
+            payload["lever_rate"] = 20;
             payload["order_price_type"] = order.OrderType == OrderType.Limit? "limit": "opponent";
             if (order.ExtraParameters.TryGetValue("execInst", out var execInst))
             {
                 payload["execInst"] = execInst;
             }
         }
-        private ExchangeOrderResult ParseOrder(JToken token,ExchangeOrderRequest orderRequest)
+        private ExchangeOrderResult ParseOrder(JObject token,ExchangeOrderRequest orderRequest)
         {
             /*
 {[
@@ -366,14 +651,15 @@ ts
                     AmountFilled = 0,
                     Price = orderRequest.Price,
                     IsBuy = orderRequest.IsBuy,
-                    OrderDate = token["ts"].ConvertInvariant<DateTime>(),
-                    OrderId = token["order_id"].ToStringInvariant(),
+                    OrderDate = new DateTime( token["ts"].ConvertInvariant<long>()),
+                    OrderId = token["data"]["order_id"].ToStringInvariant(),//token.Data["order_id"].ToStringInvariant(),
                     MarketSymbol = orderRequest.MarketSymbol,
                 };
                 result.Result = ExchangeAPIOrderResult.Pending;
             }
             else
             {
+                //Logger.Warn("m_OnPlaceOrderAsync 失败 OrderId:"+ token["data"]["order_id"].ToStringInvariant());
                 result.Result = ExchangeAPIOrderResult.Error;
             }
 
