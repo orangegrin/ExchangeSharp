@@ -753,7 +753,6 @@ ts
             {
                 candles.Add(this.ParseCandle(token, marketSymbol, periodSeconds, "open", "high", "low", "close", "id", TimestampType.UnixSeconds, null, "vol"));
             }
-            candles.Reverse();
             return candles;
         }
     }
