@@ -188,10 +188,6 @@ namespace ExchangeSharp
         /// <param name="marketSymbol">Market symbol of the order to cancel (not required for most exchanges)</param>
         Task CancelOrderAsync(string orderId, string marketSymbol = null);
 
-        decimal PriceComplianceCheck(decimal price);
-
-        decimal AmountComplianceCheck(decimal amount);
-
         /// <summary>
         /// Get margin amounts available to trade, symbol / amount dictionary
         /// </summary>
@@ -247,6 +243,13 @@ namespace ExchangeSharp
         IWebSocket GetOrderDetailsWebSocket(Action<ExchangeOrderResult> callback);
 
         /// <summary>
+        /// Get the details of all changed position via web socket
+        /// </summary>
+        /// <param name="callback">Callback</param>
+        /// <returns>Web socket, call Dispose to close</returns>
+        IWebSocket GetPositionDetailsWebSocket(Action<ExchangeMarginPositionResult> callback);
+
+        /// <summary>
         /// Get the details of all completed orders via web socket
         /// </summary>
         /// <param name="callback">Callback</param>
@@ -254,5 +257,13 @@ namespace ExchangeSharp
         IWebSocket GetCompletedOrderDetailsWebSocket(Action<ExchangeOrderResult> callback);
 
         #endregion Web Socket
+
+        #region util functions
+
+        decimal PriceComplianceCheck(decimal price);
+
+        decimal AmountComplianceCheck(decimal amount);
+
+        #endregion util functions
     }
 }

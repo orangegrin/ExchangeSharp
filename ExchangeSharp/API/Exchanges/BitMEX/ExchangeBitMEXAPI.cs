@@ -223,7 +223,7 @@ namespace ExchangeSharp
             }
             return markets;
         }
-
+        private Dictionary<string, ExchangeOrderResult> fullOrders = new Dictionary<string, ExchangeOrderResult>();
         #region WebSocket APIs
         protected override IWebSocket OnGetOrderDetailsWebSocket(Action<ExchangeOrderResult> callback)
         {
@@ -231,8 +231,10 @@ namespace ExchangeSharp
 
             return ConnectWebSocket(string.Empty, (_socket, msg) =>
              {
+
                  var str = msg.ToStringFromUTF8();
                  JToken token = JToken.Parse(str);
+
                  if (token["error"] != null)
                  {
                      Logger.Info(token["error"].ToStringInvariant());
@@ -260,16 +262,16 @@ namespace ExchangeSharp
                      //callback(new KeyValuePair<string, ExchangeTrade>(marketSymbol, t.ParseTrade("size", "price", "side", "timestamp", TimestampType.Iso8601, "trdMatchID")));
 
                  }
-                 
-                 Console.WriteLine(str);
                  return Task.CompletedTask;
              }, async (_socket) =>
              {
+                 fullOrders.Clear();
                  var payloadJSON = GeneratePayloadJSON();
                  await _socket.SendMessageAsync(payloadJSON.Result);
              });
 
         }
+
         private async Task<string> GeneratePayloadJSON()
         {
             object expires = await GenerateNonceAsync();
@@ -578,8 +580,17 @@ namespace ExchangeSharp
         protected override async Task OnCancelOrderAsync(string orderId, string marketSymbol = null)
         {
             Dictionary<string, object> payload = await GetNoncePayloadAsync();
-            payload["orderID"] = orderId;
-            JToken token = await MakeJsonRequestAsync<JToken>("/order", BaseUrl, payload, "DELETE");
+            if (orderId == "all")
+            {
+                if (marketSymbol != null)
+                    payload["symbol"] = marketSymbol;
+                JToken token = await MakeJsonRequestAsync<JToken>("/order/all", BaseUrl, payload, "DELETE");
+            }
+            else
+            {
+                payload["orderID"] = orderId;
+                JToken token = await MakeJsonRequestAsync<JToken>("/order", BaseUrl, payload, "DELETE");
+            }
         }
 
         protected override async Task<ExchangeOrderResult> OnPlaceOrderAsync(ExchangeOrderRequest order)
@@ -590,7 +601,7 @@ namespace ExchangeSharp
             return ParseOrder(token);
         }
 
-        protected override async Task<ExchangeOrderResult[]> OnPlaceOrdersAsync(params ExchangeOrderRequest[] orders)
+        private async Task<ExchangeOrderResult[]> mOnPlaceOrdersAsync(string protocol = "POST", params ExchangeOrderRequest[] orders)
         {
             List<ExchangeOrderResult> results = new List<ExchangeOrderResult>();
             Dictionary<string, object> payload = await GetNoncePayloadAsync();
@@ -602,11 +613,34 @@ namespace ExchangeSharp
                 orderRequests.Add(subPayload);
             }
             payload["orders"] = orderRequests;
-            JToken token = await MakeJsonRequestAsync<JToken>("/order/bulk", BaseUrl, payload, "POST");
+            JToken token = await MakeJsonRequestAsync<JToken>("/order/bulk", BaseUrl, payload, protocol);
             foreach (JToken orderResultToken in token)
             {
                 results.Add(ParseOrder(orderResultToken));
             }
+            return results.ToArray();
+        }
+
+        protected override async Task<ExchangeOrderResult[]> OnPlaceOrdersAsync(params ExchangeOrderRequest[] orders)
+        {
+            List<ExchangeOrderResult> results = new List<ExchangeOrderResult>();
+            var postOrderRequests = new List<ExchangeOrderRequest>();
+            var putOrderRequests = new List<ExchangeOrderRequest>();
+            foreach (ExchangeOrderRequest order in orders)
+            {
+                if (order.ExtraParameters.ContainsKey("orderID"))
+                {
+                    putOrderRequests.Add(order);
+                }
+                else
+                {
+                    postOrderRequests.Add(order);
+                }
+            }
+            if (putOrderRequests.Count > 0)
+                results.AddRange(await mOnPlaceOrdersAsync("PUT", putOrderRequests.ToArray()));
+            if (postOrderRequests.Count > 0)
+                results.AddRange(await mOnPlaceOrdersAsync("POST", postOrderRequests.ToArray()));
             return results.ToArray();
         }
 
@@ -620,6 +654,10 @@ namespace ExchangeSharp
             if (order.ExtraParameters.TryGetValue("execInst", out var execInst))
             {
                 payload["execInst"] = execInst;
+            }
+            if (order.ExtraParameters.TryGetValue("orderID", out var orderID))
+            {
+                payload["orderID"] = orderID;
             }
         }
 
@@ -696,7 +734,25 @@ namespace ExchangeSharp
                     break;
             }
 
-            return result;
+            ExchangeOrderResult fullOrder;
+            if (fullOrders.TryGetValue(result.OrderId, out fullOrder))
+            {
+                if (result.Amount != 0)
+                    fullOrder.Amount = result.Amount;
+                if (result.Result != ExchangeAPIOrderResult.Error)
+                    fullOrder.Result = result.Result;
+                if (result.Price != 0)
+                    fullOrder.Price = result.Price;
+                if (result.OrderDate > fullOrder.OrderDate)
+                    fullOrder.OrderDate = result.OrderDate;
+            }
+            else
+            {
+                fullOrder = result;
+            }
+            fullOrders[result.OrderId] = fullOrder;
+
+            return fullOrder;
         }
 
 

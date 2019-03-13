@@ -108,11 +108,21 @@ namespace ExchangeSharp
         protected virtual IWebSocket OnGetTradesWebSocket(Action<KeyValuePair<string, ExchangeTrade>> callback, params string[] marketSymbols) => throw new NotImplementedException();
         protected virtual IWebSocket OnGetOrderBookWebSocket(Action<ExchangeOrderBook> callback, int maxCount = 20, params string[] marketSymbols) => throw new NotImplementedException();
         protected virtual IWebSocket OnGetOrderDetailsWebSocket(Action<ExchangeOrderResult> callback) => throw new NotImplementedException();
+        protected virtual IWebSocket OnGetPositionDetailsWebSocket(Action<ExchangeMarginPositionResult> callback) => throw new NotImplementedException();
         protected virtual IWebSocket OnGetCompletedOrderDetailsWebSocket(Action<ExchangeOrderResult> callback) => throw new NotImplementedException();
 
         #endregion API implementation
 
         #region Protected methods
+        //protected abstract decimal PriceComplianceCheck(decimal price);
+        //protected virtual decimal PriceComplianceCheck(decimal price)
+        //{
+        //    return price;
+        //}
+        //protected virtual decimal AmountComplianceCheck(decimal amount)
+        //{
+        //    return amount;
+        //}
 
         /// <summary>
         /// Clamp price using market info. If necessary, a network request will be made to retrieve symbol metadata.
@@ -870,6 +880,17 @@ namespace ExchangeSharp
         {
             callback.ThrowIfNull(nameof(callback), "Callback must not be null");
             return OnGetOrderDetailsWebSocket(callback);
+        }
+
+        /// <summary>
+        /// Get the details of all changed orders via web socket
+        /// </summary>
+        /// <param name="callback">Callback</param>
+        /// <returns>Web socket, call Dispose to close</returns>
+        public virtual IWebSocket GetPositionDetailsWebSocket(Action<ExchangeMarginPositionResult> callback)
+        {
+            callback.ThrowIfNull(nameof(callback), "Callback must not be null");
+            return OnGetPositionDetailsWebSocket(callback);
         }
 
         /// <summary>
