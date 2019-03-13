@@ -68,7 +68,7 @@ namespace ExchangeSharp
             }
             return ExchangeMarketSymbolToGlobalMarketSymbolWithSeparator(marketSymbol.Substring(3) + GlobalMarketSymbolSeparator + marketSymbol.Substring(0, 3), GlobalMarketSymbolSeparator);
         }
-
+        //1min, 5min, 15min, 30min, 60min,4hour,1day, 1mon
         public override string PeriodSecondsToString(int seconds)
         {
             return CryptoUtility.SecondsToPeriodStringLong(seconds);
@@ -330,7 +330,6 @@ namespace ExchangeSharp
         /// <returns></returns>
         protected override async Task<ExchangeOrderResult> OnPlaceOrderAsync(ExchangeOrderRequest order)
         {
-
             ///////////////////////TEST/////////////////
             //currentPostionDic.Add(order.MarketSymbol, new ExchangeOrderResult
             //{
@@ -339,7 +338,6 @@ namespace ExchangeSharp
             //    Price = 3888,
             //    IsBuy = false,
             //    MarketSymbol = order.MarketSymbol,
-
             //});
             ///////////////////////TEST/////////////////
             if (order.OrderType == OrderType.Limit)
@@ -687,6 +685,77 @@ ts
         }
         #endregion
 
+        public override async Task<IEnumerable<MarketCandle>> GetCandlesAsync(string marketSymbol, int periodSeconds, DateTime? startDate = null, DateTime? endDate = null, int? limit = null)
+        {
+            //marketSymbol = NormalizeMarketSymbol(marketSymbol);
+            return await Cache.CacheMethod(MethodCachePolicy, async () => await OnGetCandlesAsync(marketSymbol, periodSeconds, startDate, endDate, limit), nameof(GetCandlesAsync),
+                nameof(marketSymbol), marketSymbol, nameof(periodSeconds), periodSeconds, nameof(startDate), startDate, nameof(endDate), endDate, nameof(limit), limit);
+        }
+        /// <summary>
+        /// symbol  true    string 合约名称        如"BTC_CW"表示BTC当周合约，"BTC_NW"表示BTC次周合约，"BTC_CQ"表示BTC季度合约
+        /// period  true    string K线类型        1min, 5min, 15min, 30min, 60min,4hour,1day, 1mon
+        /// size    true    integer 获取数量    150[1, 2000]
+        /// </summary>
+        /// <param name="marketSymbol"></param>
+        /// <param name="periodSeconds"></param>string K线类型        1min, 5min, 15min, 30min, 60min,4hour,1day, 1mon 传入秒 
+        /// <param name="startDate"></param>
+        /// <param name="endDate"></param>
+        /// <param name="limit"></param>
+        /// <returns></returns>
+        protected override async Task<IEnumerable<MarketCandle>> OnGetCandlesAsync(string marketSymbol, int periodSeconds, DateTime? startDate = null, DateTime? endDate = null, int? limit = null)
+        {
+
+
+            /*
+# Response
+{
+  "ch": "market.BTC_CQ.kline.1min",
+  "data": [
+    {
+      "vol": 2446,
+      "close": 5000,
+      "count": 2446,
+      "high": 5000,
+      "id": 1529898120,
+      "low": 5000,
+      "open": 5000,
+      "amount": 48.92
+     },
+    {
+      "vol": 0,
+      "close": 5000,
+      "count": 0,
+      "high": 5000,
+      "id": 1529898780,
+      "low": 5000,
+      "open": 5000,
+      "amount": 0
+     }
+   ],
+  "status": "ok",
+  "ts": 1529908345313
+},
+             */
+
+            List<MarketCandle> candles = new List<MarketCandle>();
+            string size = "150";
+            
+            if (limit != null)
+            {
+                // default is 150, max: 2000
+                size=(limit.Value.ToStringInvariant());
+            }
+            string periodString = PeriodSecondsToString(periodSeconds);
+            string url = $"/market/history/kline?period={periodString}&size={size}&symbol={marketSymbol}";
+            
+            JToken allCandles = await MakeJsonRequestAsync<JToken>(url, BaseUrl, null);
+            foreach (var token in allCandles)
+            {
+                candles.Add(this.ParseCandle(token, marketSymbol, periodSeconds, "open", "high", "low", "close", "id", TimestampType.UnixSeconds, null, "vol"));
+            }
+            candles.Reverse();
+            return candles;
+        }
     }
     public partial class ExchangeName { public const string HBDM = "HBDM"; }
 }

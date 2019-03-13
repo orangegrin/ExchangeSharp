@@ -1053,7 +1053,7 @@ namespace ExchangeSharp
         /// </summary>
         /// <param name="seconds">Seconds. Use 60 for minute, 3600 for hour, 3600*24 for day, 3600*24*30 for month.</param>
         /// <returns>Period string</returns>
-        public static string SecondsToPeriodStringLong(int seconds)
+        public static string SecondsToPeriodStringLong(int seconds,string year = "year", string mon = "mon", string week = "week", string day = "day", string hour = "hour", string min = "min")
         {
             const int minuteThreshold = 60;
             const int hourThreshold = 60 * 60;
@@ -1064,23 +1064,23 @@ namespace ExchangeSharp
 
             if (seconds >= yearThreshold)
             {
-                return seconds / yearThreshold + "year";
+                return seconds / yearThreshold + year;
             }
             else if (seconds >= monthThreshold)
             {
-                return seconds / monthThreshold + "mon";
+                return seconds / monthThreshold + mon;
             }
             else if (seconds >= weekThreshold)
             {
-                return seconds / weekThreshold + "week";
+                return seconds / weekThreshold + week;
             }
             else if (seconds >= dayThreshold)
             {
-                return seconds / dayThreshold + "day";
+                return seconds / dayThreshold + day;
             }
             else if (seconds >= hourThreshold)
             {
-                return seconds / hourThreshold + "hour";
+                return seconds / hourThreshold + hour;
             }
             else if (seconds >= minuteThreshold)
             {
