@@ -71,7 +71,15 @@ namespace ExchangeSharp
         //1min, 5min, 15min, 30min, 60min,4hour,1day, 1mon
         public override string PeriodSecondsToString(int seconds)
         {
-            return CryptoUtility.SecondsToPeriodStringLong(seconds);
+            if(seconds == 3600)
+            {
+                return "60min";
+
+            }
+            else
+            {
+                return CryptoUtility.SecondsToPeriodStringLong(seconds);
+            }
         }
 
         public override decimal AmountComplianceCheck(decimal amount)
@@ -416,8 +424,9 @@ namespace ExchangeSharp
                 ExchangeOrderRequest closeOrder = order;
                 closeOrder.IsBuy = ! currentPostion.IsBuy;
                 closeOrder.Amount = closeNum;
-                ExchangeOrderResult downReturnResult = await m_OnPlaceOrderAsync(closeOrder,false);
+                ExchangeOrderResult downReturnResult = await m_OnPlaceOrderAsync(closeOrder, false);
                 downReturnResult.Amount = amount * 100;
+                //m_OnPlaceOrderAsync(closeOrder, false);
                 //TODO 如果失败了平仓(不需貌似await)
             }
             if (openNum > 0)//开仓
@@ -526,25 +535,6 @@ namespace ExchangeSharp
             var account_id = accounts[key];
             return account_id;
         }
-        //private async Task<ExchangeOrderResult> m_OnPlaceOrderAsync(ExchangeOrderRequest order, bool isOpen)
-        //{
-        //    var account_id = await GetAccountID(order.IsMargin, order.MarketSymbol);
-
-        //    var payload = await GetNoncePayloadAsync();
-        //    payload.Add("account-id", account_id);
-        //    payload.Add("symbol", order.MarketSymbol);
-        //    payload.Add("type", order.IsBuy ? "buy" : "sell");
-        //    payload.Add("source", order.IsMargin ? "margin-api" : "api");
-
-        //    AddOrderToPayload(order, isOpen, payload);
-
-        //    order.ExtraParameters.CopyTo(payload);
-
-        //    JToken obj = await MakeJsonRequestAsync<JToken>("/api/v1/contract_order", PrivateUrlV1, payload, "POST");
-        //    //order.Amount = outputQuantity;
-        //    //order.Price = outputPrice;
-        //    return ParsePlaceOrder(obj, order);
-        //}
         private ExchangeOrderResult ParsePlaceOrder(JToken token, ExchangeOrderRequest order)
         {
             /*
@@ -566,27 +556,6 @@ namespace ExchangeSharp
 
             return result;
         }
-
-        //protected override async Task<ExchangeOrderResult[]> OnPlaceOrdersAsync(params ExchangeOrderRequest[] orders)
-        //{
-        //    List<ExchangeOrderResult> results = new List<ExchangeOrderResult>();
-        //    Dictionary<string, object> payload = await GetNoncePayloadAsync();
-        //    List<Dictionary<string, object>> orderRequests = new List<Dictionary<string, object>>();
-        //    foreach (ExchangeOrderRequest order in orders)
-        //    {
-        //        Dictionary<string, object> subPayload = new Dictionary<string, object>();
-        //        AddOrderToPayload(order, subPayload);
-        //        orderRequests.Add(subPayload);
-        //    }
-        //    payload["orders"] = orderRequests;
-        //    JToken token = await MakeJsonRequestAsync<JToken>("/order/bulk", BaseUrl, payload, "POST");
-        //    foreach (JToken orderResultToken in token)
-        //    {
-        //        results.Add(ParseOrder(orderResultToken));
-        //    }
-        //    return results.ToArray();
-        //}
-
         /// <summary>
         ///symbol  string  true    "BTC","ETH"...
         ///contract_type string  true    合约类型("this_week":当周 "next_week":下周 "quarter":季度)
