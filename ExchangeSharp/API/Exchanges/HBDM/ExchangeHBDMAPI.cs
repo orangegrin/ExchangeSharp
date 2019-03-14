@@ -84,7 +84,7 @@ namespace ExchangeSharp
 
         public override decimal AmountComplianceCheck(decimal amount)
         {
-            return Math.Floor(amount * basicUnit) / basicUnit;
+            return Math.Ceiling(amount * basicUnit) / basicUnit;
         }
 
         #region Websocket API
