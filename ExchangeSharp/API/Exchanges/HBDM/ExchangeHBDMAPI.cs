@@ -348,11 +348,11 @@ namespace ExchangeSharp
             //    MarketSymbol = order.MarketSymbol,
             //});
             ///////////////////////TEST/////////////////
-            if (order.OrderType == OrderType.Limit)
-            {
-                Logger.Error(new Exception("尚未实现限价单"));
-                return new ExchangeOrderResult();
-            }
+            //if (order.OrderType == OrderType.Limit)
+            //{
+            //    Logger.Error(new Exception("尚未实现限价单"));
+            //    return new ExchangeOrderResult();
+            //}
             order.Amount = order.Amount / 100;//两边平台100倍
             string marketSymbol = order.MarketSymbol;
             Side side = order.IsBuy==true?Side.Buy:Side.Sell;
