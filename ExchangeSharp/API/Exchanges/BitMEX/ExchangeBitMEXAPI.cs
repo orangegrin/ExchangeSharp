@@ -370,7 +370,7 @@ namespace ExchangeSharp
                 foreach (var t in data)
                 {
                     var marketSymbol = t["symbol"].ToStringInvariant();
-                    callback(new KeyValuePair<string, ExchangeTrade>(marketSymbol, t.ParseTrade("size", "price", "side", "timestamp", TimestampType.Iso8601, "trdMatchID")));
+                    callback(new KeyValuePair<string, ExchangeTrade>(marketSymbol, t.ParseTrade("size", "price", "side", "timestamp", TimestampType.Iso8601)));
                 }
                 return Task.CompletedTask;
             }, async (_socket) =>
