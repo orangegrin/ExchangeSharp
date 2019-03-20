@@ -273,7 +273,8 @@ namespace ExchangeSharp
             var result = new ExchangeMarginPositionResult
             {
                 MarketSymbol = t["symbol"].ToStringInvariant(),
-                Amount = t["currentQty"].ConvertInvariant<decimal>()
+                Amount = t["currentQty"].ConvertInvariant<decimal>(),
+                Total = t["homeNotional"].ConvertInvariant<decimal>()
             };
             return result;
         }
