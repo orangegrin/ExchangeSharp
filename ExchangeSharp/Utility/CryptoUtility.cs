@@ -1143,7 +1143,7 @@ namespace ExchangeSharp
         /// }
         /// Console.ReadLine();
         /// ]]></example>
-        public static void SaveUnprotectedStringsToFile(string path, string[] strings)
+        public static void SaveUnprotectedStringsToFile(string path, params string[] strings)
         {
             MemoryStream memory = new MemoryStream();
             BinaryWriter writer = new BinaryWriter(memory, Encoding.UTF8);
