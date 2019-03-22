@@ -144,7 +144,15 @@
   </ItemGroup>
 
   <PropertyGroup Condition="'$(TargetFramework)' == 'net471'">
-    <DefineConstants>HAS_WINDOWS_FORMS</DefineConstants>
+    <DefineConstants>TRACE;DEBUG;HAS_WINDOWS_FORMS</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Debug|net471|AnyCPU'">
+    <ErrorReport>queue</ErrorReport>
+    <DocumentationFile></DocumentationFile>
+    <DebugType>full</DebugType>
+    <DebugSymbols>true</DebugSymbols>
+    <WarningLevel>0</WarningLevel>
   </PropertyGroup>
 
 </Project>

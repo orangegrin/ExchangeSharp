@@ -84,7 +84,7 @@ namespace ExchangeSharp
 
         public override decimal AmountComplianceCheck(decimal amount)
         {
-            return Math.Ceiling(amount * basicUnit) / basicUnit;
+            return Math.Ceiling(amount / basicUnit )* basicUnit;
         }
 
         #region Websocket API
@@ -366,15 +366,18 @@ namespace ExchangeSharp
 
             decimal openNum = 0;
             decimal closeNum = 0;
+            decimal closeEndNum = -1;
             bool hadPosition = currentPostionDic.TryGetValue(marketSymbol, out currentPostion);
+            decimal currentPostionAmount = 0;
             if (hadPosition==false || currentPostion.Amount == 0)
             {
                 //直接开仓
                 openNum = amount;
+                closeEndNum = amount;
             }
             else
             {
-                decimal currentPostionAmount = currentPostion.Amount / 100;
+                currentPostionAmount = currentPostion.Amount / 100;
                 if (currentPostion.IsBuy)
                 {
                     if(side == Side.Buy)
@@ -394,6 +397,7 @@ namespace ExchangeSharp
                             closeNum = Math.Abs(currentPostionAmount);
                             openNum = amount - Math.Abs(currentPostionAmount);
                         }
+                        closeEndNum = Math.Abs(currentPostionAmount) - amount;
                     }
                 }
                 else if (currentPostion.IsBuy==false)
@@ -410,6 +414,7 @@ namespace ExchangeSharp
                             closeNum = Math.Abs(currentPostionAmount);
                             openNum = amount - Math.Abs(currentPostionAmount);
                         }
+                        closeEndNum = Math.Abs(currentPostionAmount) - amount;
                     }
                     else if (side == Side.Sell)
                     {
@@ -418,7 +423,42 @@ namespace ExchangeSharp
                     }
                 }
             }
-            ExchangeOrderResult returnResult = null;
+            //计算最后的仓位和方向
+            ExchangeOrderResult returnResult = new ExchangeOrderResult();
+            if(closeNum==0)//仓位和加仓方向相同
+            {
+                returnResult.Amount = currentPostionAmount + openNum;
+                returnResult.IsBuy = order.IsBuy;
+            }
+            else//仓位和加仓方向相反
+            {
+                returnResult.Amount = Math.Abs(currentPostionAmount - openNum);
+                if (openNum > 0)//如果有新开仓说明是反向的，否则方向相同
+                {
+                    returnResult.IsBuy = !order.IsBuy;
+                }
+                else
+                {
+                    returnResult.IsBuy = order.IsBuy;
+                }
+            }
+            //为了避免多个crossMarket 同时操作
+            if (hadPosition)
+            {
+                currentPostionDic[marketSymbol] = returnResult;
+            }
+            else
+            {
+                if (currentPostionDic.ContainsKey(marketSymbol))
+                {
+                    currentPostionDic[marketSymbol] = returnResult;
+                    Console.WriteLine("按理说应该有仓位");
+                }
+                else
+                    currentPostionDic.Add(marketSymbol, returnResult);
+                //currentPostionDic.Add(marketSymbol, returnResult);
+            }
+            
             if (closeNum>0)//平仓
             {
                 ExchangeOrderRequest closeOrder = order;
@@ -434,21 +474,8 @@ namespace ExchangeSharp
                 ExchangeOrderRequest closeOrder = order;
                 //closeOrder.IsBuy = true;
                 order.Amount = openNum;
-                returnResult = await m_OnPlaceOrderAsync(closeOrder, true);
-                returnResult.Amount = amount * 100;
-            }
-            else//如果刚刚好平仓，
-            {
-                returnResult = new ExchangeOrderResult();
-                returnResult.Amount = 0;
-            }
-            if(hadPosition)
-            {
-                currentPostionDic[marketSymbol] = returnResult;
-            }
-            else
-            {
-                currentPostionDic.Add(marketSymbol, returnResult);
+                ExchangeOrderResult m_returnResult = await m_OnPlaceOrderAsync(closeOrder, true);
+                m_returnResult.Amount = amount * 100;
             }
             return returnResult;
         }
@@ -477,11 +504,20 @@ namespace ExchangeSharp
             //req.symbol = payload["symbol"].ToString();
             //req.contract_type = payload["contract_type"].ToString();
             //string result = api.OrderPlace(req);
-
-            JObject token = await MakeJsonRequestAsync<JObject>(addUrl, BaseUrl, payload, "POST");
- 
-            JObject jo = JsonConvert.DeserializeObject<JObject>(token.Root.ToString());
-            return ParseOrder(jo, order);
+            JObject token;
+            JObject jo;
+            try
+            {
+                token = await MakeJsonRequestAsync<JObject>(addUrl, BaseUrl, payload, "POST");
+                jo = JsonConvert.DeserializeObject<JObject>(token.Root.ToString());
+                return ParseOrder(jo, order);
+            }
+            catch (System.Exception ex)
+            {
+                
+                throw new Exception(payload.ToString(), ex);
+            }
+            
         }
 
         private async Task<Dictionary<string, string>> OnGetAccountsAsync()
