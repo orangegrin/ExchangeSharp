@@ -223,6 +223,62 @@ namespace ExchangeSharp
             }
             return markets;
         }
+
+
+        protected override IWebSocket OnGetPositionDetailsWebSocket(Action<ExchangeMarginPositionResult> callback)
+        {
+            return ConnectWebSocket(string.Empty, (_socket, msg) =>
+            {
+
+                var str = msg.ToStringFromUTF8();
+                JToken token = JToken.Parse(str);
+
+                if (token["error"] != null)
+                {
+                    Logger.Info(token["error"].ToStringInvariant());
+                    return Task.CompletedTask;
+                }
+                //{"success":true,"request":{"op":"authKeyExpires","args":["2xrwtDdMimp5Oi3F6oSmtsew",1552157533,"1665aedbd293e435fafbfaba2e5475f882bae9228bab0f29d9f3b5136d073294"]}}
+                if (token["request"] != null && token["request"]["op"].ToStringInvariant() == "authKeyExpires")
+                {
+                    //{ "op": "subscribe", "args": ["order"]}
+                    _socket.SendMessageAsync(new { op = "subscribe", args = "position" });
+                    return Task.CompletedTask;
+                }
+                if (token["table"] == null)
+                {
+                    return Task.CompletedTask;
+                }
+                //
+                var action = token["action"].ToStringInvariant();
+                JArray data = token["data"] as JArray;
+                foreach (var t in data)
+                {
+                    var marketSymbol = t["symbol"].ToStringInvariant();
+                    var position = ParsePosition(t);
+                    callback(position);
+                    //callback(new KeyValuePair<string, ExchangeTrade>(marketSymbol, t.ParseTrade("size", "price", "side", "timestamp", TimestampType.Iso8601, "trdMatchID")));
+
+                }
+                return Task.CompletedTask;
+            }, async (_socket) =>
+            {
+                var payloadJSON = GeneratePayloadJSON();
+                await _socket.SendMessageAsync(payloadJSON.Result);
+            });
+        }
+
+        private ExchangeMarginPositionResult ParsePosition(JToken t)
+        {
+            var result = new ExchangeMarginPositionResult
+            {
+                MarketSymbol = t["symbol"].ToStringInvariant(),
+                Amount = t["homeNotional"].ConvertInvariant<decimal>(),
+                Total = t["currentQty"].ConvertInvariant<decimal>()
+            };
+            return result;
+        }
+
         private Dictionary<string, ExchangeOrderResult> fullOrders = new Dictionary<string, ExchangeOrderResult>();
         #region WebSocket APIs
         protected override IWebSocket OnGetOrderDetailsWebSocket(Action<ExchangeOrderResult> callback)
@@ -315,7 +371,7 @@ namespace ExchangeSharp
                 foreach (var t in data)
                 {
                     var marketSymbol = t["symbol"].ToStringInvariant();
-                    callback(new KeyValuePair<string, ExchangeTrade>(marketSymbol, t.ParseTrade("size", "price", "side", "timestamp", TimestampType.Iso8601, "trdMatchID")));
+                    callback(new KeyValuePair<string, ExchangeTrade>(marketSymbol, t.ParseTrade("size", "price", "side", "timestamp", TimestampType.Iso8601)));
                 }
                 return Task.CompletedTask;
             }, async (_socket) =>
