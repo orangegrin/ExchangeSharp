@@ -80,6 +80,11 @@ namespace ExchangeSharp
         {
             return ShouldRoundAmount ? CryptoUtility.RoundAmount(Amount) : Amount;
         }
+
+        public override string ToString()
+        {
+            return $"{"MarketSymbol:"}{MarketSymbol}{IsBuy}{"Amount:"}{Amount}{"at Price:"}{Price}{"ExtraParameters:"}{ExtraParameters.ToString()}";
+        }
     }
 
     /// <summary>

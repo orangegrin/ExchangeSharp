@@ -214,6 +214,7 @@ namespace ExchangeSharp
             catch (Exception ex)
             {
                 RequestStateChanged?.Invoke(this, RequestMakerState.Error, ex);
+                Logger.Error(ex.Message+ex.StackTrace);
                 throw;
             }
             finally

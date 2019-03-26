@@ -25,7 +25,9 @@ namespace ExchangeSharp
         private Dictionary<string, ExchangeOrderResult> currentPostionDic = null;
         public ExchangeHBDMAPI()
         {
-            RequestContentType = "application/x-www-form-urlencoded";
+            
+            //RequestContentType = "application/x-www-form-urlencoded";
+            RequestContentType = "application / json";
             NonceStyle = NonceStyle.UnixMilliseconds;
             MarketSymbolSeparator = "_";//string.Empty;
             MarketSymbolIsUppercase = false;
@@ -339,14 +341,22 @@ namespace ExchangeSharp
         protected override async Task<ExchangeOrderResult> OnPlaceOrderAsync(ExchangeOrderRequest order)
         {
             ///////////////////////TEST/////////////////
-            //currentPostionDic.Add(order.MarketSymbol, new ExchangeOrderResult
-            //{
-            //    Amount = 100,
-            //    AmountFilled = 0,
-            //    Price = 3888,
-            //    IsBuy = false,
-            //    MarketSymbol = order.MarketSymbol,
-            //});
+//             ExchangeOrderResult pos = null;
+//             bool _hadPosition = currentPostionDic.TryGetValue(order.MarketSymbol, out pos);
+//             if (!_hadPosition)
+//             {
+//                 pos = new ExchangeOrderResult
+//                 {
+//                     Amount = 300,
+//                     AmountFilled = 0,
+//                     //Price = 3997,
+//                     IsBuy = true,
+//                     MarketSymbol = order.MarketSymbol,
+//                     //OrderType = OrderType.Market,
+//                 };
+//                 currentPostionDic.Add(order.MarketSymbol, pos);
+// 
+//             }
             ///////////////////////TEST/////////////////
             //if (order.OrderType == OrderType.Limit)
             //{
@@ -425,21 +435,24 @@ namespace ExchangeSharp
             }
             //计算最后的仓位和方向
             ExchangeOrderResult returnResult = new ExchangeOrderResult();
-            if(closeNum==0)//仓位和加仓方向相同
+            returnResult.MarketSymbol = marketSymbol;
+            if (closeNum==0)//仓位和加仓方向相同
             {
                 returnResult.Amount = currentPostionAmount + openNum;
+                returnResult.Amount = returnResult.Amount * 100;
                 returnResult.IsBuy = order.IsBuy;
             }
             else//仓位和加仓方向相反
             {
-                returnResult.Amount = Math.Abs(currentPostionAmount - openNum);
-                if (openNum > 0)//如果有新开仓说明是反向的，否则方向相同
+                returnResult.Amount = Math.Abs(currentPostionAmount - order.Amount);
+                returnResult.Amount = returnResult.Amount * 100;
+                if (openNum > 0)//如果有新开仓说明最后是新开仓方向，否则是原来的方向
                 {
-                    returnResult.IsBuy = !order.IsBuy;
+                    returnResult.IsBuy = order.IsBuy;
                 }
                 else
                 {
-                    returnResult.IsBuy = order.IsBuy;
+                    returnResult.IsBuy = !order.IsBuy;
                 }
             }
             //为了避免多个crossMarket 同时操作
@@ -477,6 +490,7 @@ namespace ExchangeSharp
                 ExchangeOrderResult m_returnResult = await m_OnPlaceOrderAsync(closeOrder, true);
                 m_returnResult.Amount = amount * 100;
             }
+            Logger.Error(returnResult.ToExcleString());
             return returnResult;
         }
 
@@ -514,7 +528,8 @@ namespace ExchangeSharp
             }
             catch (System.Exception ex)
             {
-                
+                Logger.Error(ex);
+                Logger.Error(ex.Message, "  payload:", payload, "  addUrl:", addUrl, "  BaseUrl:", BaseUrl, ex.StackTrace);
                 throw new Exception(payload.ToString(), ex);
             }
             

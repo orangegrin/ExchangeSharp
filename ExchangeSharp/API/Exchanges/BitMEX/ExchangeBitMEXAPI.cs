@@ -780,6 +780,9 @@ namespace ExchangeSharp
                     break;
                 case "Filled":
                     result.Result = ExchangeAPIOrderResult.Filled;
+                    Logger.Error("1ExchangeAPIOrderResult.Filled:" + result.ToExcleString());
+                    Logger.Error("2ExchangeAPIOrderResult.Filled:" + token["side"].ToStringInvariant());
+                    Logger.Error("3ExchangeAPIOrderResult.Filled:" + token.ToString());
                     break;
                 case "Canceled":
                     result.Result = ExchangeAPIOrderResult.Canceled;

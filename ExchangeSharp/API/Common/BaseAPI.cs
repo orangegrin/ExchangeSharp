@@ -455,11 +455,21 @@ namespace ExchangeSharp
 
             string stringResult = await MakeRequestAsync(url, baseUrl: baseUrl, payload: payload, method: requestMethod);
             T jsonResult = JsonConvert.DeserializeObject<T>(stringResult);
-            if (jsonResult is JToken token)
+            try
             {
-                return (T)(object)CheckJsonResponse(token);
+                if (jsonResult is JToken token)
+                {
+                    return (T)(object)CheckJsonResponse(token);
+                }
+                return jsonResult;
             }
-            return jsonResult;
+            catch (Exception ex)
+            {
+                Logger.Error(ex.Message, "  payload:", payload, "  url:", url, "  baseUrl:", baseUrl, "  requestMethod:", requestMethod,ex.StackTrace);
+                throw new APIException(ex.Message);
+            }
+            
+            
         }
 
         /// <summary>
