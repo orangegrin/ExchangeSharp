@@ -868,6 +868,8 @@ namespace ExchangeSharp
                     fullOrder.AmountFilled = result.AmountFilled;
                 if (result.AveragePrice != 0)
                     fullOrder.AveragePrice = result.AveragePrice;
+                if (result.IsBuy != fullOrder.IsBuy)
+                    fullOrder.IsBuy = result.IsBuy;
             }
             else
             {
