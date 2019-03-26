@@ -223,6 +223,66 @@ namespace ExchangeSharp
             }
             return markets;
         }
+        private Dictionary<string, JToken> tickerPairs = new Dictionary<string, JToken>();
+        protected override IWebSocket OnGetTickersWebSocket(Action<IReadOnlyCollection<KeyValuePair<string, ExchangeTicker>>> tickers, params string[] marketSymbols)
+        {
+            return ConnectWebSocket(string.Empty, (_socket, msg) =>
+            {
+                var str = msg.ToStringFromUTF8();
+                JToken token = JToken.Parse(str);
+
+                if (token["error"] != null)
+                {
+                    Logger.Info(token["error"].ToStringInvariant());
+                    return Task.CompletedTask;
+                }
+                else if (token["table"] == null)
+                {
+                    return Task.CompletedTask;
+                }
+
+                var action = token["action"].ToStringInvariant();
+                JArray data = token["data"] as JArray;
+                foreach (var t in data)
+                {
+                    var marketSymbol = t["symbol"].ToStringInvariant();
+                    JToken fullToken;
+                    if (action == "partial")
+                    {
+                        tickerPairs[marketSymbol] = t;
+                        fullToken = t;
+                    }
+                    else
+                    {
+                        fullToken = tickerPairs[marketSymbol];
+                        foreach (var item in t)
+                        {
+                            if (item is JProperty)
+                            {
+                                var jp = (JProperty)item;
+                                fullToken[jp.Name] = jp.Value;
+                            }
+                        }
+                    }
+
+                    tickers.Invoke(new List<KeyValuePair<string, ExchangeTicker>>
+                    {
+                        new KeyValuePair<string, ExchangeTicker>(marketSymbol, this.ParseTicker(fullToken, marketSymbol, "askPrice", "bidPrice", "lastPrice", "volume", null, "timestamp", TimestampType.Iso8601))
+                    });
+                }
+                return Task.CompletedTask;
+            }, async (_socket) =>
+            {
+                if (marketSymbols == null || marketSymbols.Length == 0)
+                {
+                    await _socket.SendMessageAsync(new { op = "subscribe", args = "instrument" });
+                }
+                else
+                {
+                    await _socket.SendMessageAsync(new { op = "subscribe", args = marketSymbols.Select(s => "instrument:" + this.NormalizeMarketSymbol(s)).ToArray() });
+                }
+            });
+        }
 
 
         protected override IWebSocket OnGetPositionDetailsWebSocket(Action<ExchangeMarginPositionResult> callback)
@@ -653,6 +713,7 @@ namespace ExchangeSharp
         {
             Dictionary<string, object> payload = await GetNoncePayloadAsync();
             AddOrderToPayload(order, payload);
+            Console.WriteLine(JsonConvert.SerializeObject(payload).ToString());
             JToken token = await MakeJsonRequestAsync<JToken>("/order", BaseUrl, payload, "POST");
             return ParseOrder(token);
         }
@@ -706,7 +767,8 @@ namespace ExchangeSharp
             payload["ordType"] = order.OrderType.ToStringInvariant();
             payload["side"] = order.IsBuy ? "Buy" : "Sell";
             payload["orderQty"] = order.Amount;
-            payload["price"] = order.Price;
+            if (order.Price != 0)
+                payload["price"] = order.Price;
             if (order.ExtraParameters.TryGetValue("execInst", out var execInst))
             {
                 payload["execInst"] = execInst;
@@ -766,7 +828,8 @@ namespace ExchangeSharp
                 IsBuy = token["side"].ToStringInvariant().EqualsWithOption("Buy"),
                 OrderDate = token["transactTime"].ConvertInvariant<DateTime>(),
                 OrderId = token["orderID"].ToStringInvariant(),
-                MarketSymbol = token["symbol"].ToStringInvariant()
+                MarketSymbol = token["symbol"].ToStringInvariant(),
+                AveragePrice = token["avgPx"].ConvertInvariant<decimal>(),
             };
 
             // http://www.onixs.biz/fix-dictionary/5.0.SP2/tagNum_39.html
@@ -801,6 +864,10 @@ namespace ExchangeSharp
                     fullOrder.Price = result.Price;
                 if (result.OrderDate > fullOrder.OrderDate)
                     fullOrder.OrderDate = result.OrderDate;
+                if (result.AmountFilled != 0)
+                    fullOrder.AmountFilled = result.AmountFilled;
+                if (result.AveragePrice != 0)
+                    fullOrder.AveragePrice = result.AveragePrice;
             }
             else
             {
