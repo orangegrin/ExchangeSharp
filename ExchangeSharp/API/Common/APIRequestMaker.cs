@@ -160,6 +160,7 @@ namespace ExchangeSharp
             }
 
             string fullUrl = (baseUrl ?? api.BaseUrl) + url;
+            //fullUrl = "https://fx-api-testnet.gateio.ws/api/v4/futures/positions/BTC_USD/leverage?leverage=25";
             method = method ?? api.RequestMethod;
             Uri uri = api.ProcessRequestUrl(new UriBuilder(fullUrl), payload, method);
             InternalHttpWebRequest request = new InternalHttpWebRequest(uri)

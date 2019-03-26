@@ -872,6 +872,28 @@ namespace ExchangeSharp
             return BitConverter.ToString(hashmessage).Replace("-", "");
         }
 
+
+
+        public static string GetSHA512HashFromString(string strData)
+        {
+            byte[] bytValue = System.Text.Encoding.UTF8.GetBytes(strData);
+            try
+            {
+                SHA512 sha512 = new SHA512CryptoServiceProvider();
+                byte[] retVal = sha512.ComputeHash(bytValue);
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < retVal.Length; i++)
+                {
+                    sb.Append(retVal[i].ToString("x2"));
+                }
+                return sb.ToString();
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("GetSHA512HashFromString() fail,error:" + ex.Message);
+            }
+
+        }
         /// <summary>
         /// Sign a message with SHA512 hash
         /// </summary>

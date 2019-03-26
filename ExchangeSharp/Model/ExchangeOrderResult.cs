@@ -90,7 +90,19 @@ namespace ExchangeSharp
         /// <returns>A string that represents this instance.</returns>
         public override string ToString()
         {
-            return $"[{OrderDate}], {(IsBuy ? "Buy" : "Sell")} {AmountFilled} of {Amount} {MarketSymbol} {Result} at {AveragePrice}, fees paid {Fees} {FeesCurrency}";
+            return $"[{OrderDate.AddHours(8)}], {(IsBuy ? "Buy" : "Sell")} {AmountFilled} of {Amount} {MarketSymbol} {Result} at {Price}, fees paid {Fees} {FeesCurrency}";
+
+        }
+        /// <summary>
+        /// print excle string
+        /// </summary>
+        /// <returns></returns>
+        public string ToExcleString()
+        {
+            
+            return $"{OrderDate.AddHours(8)},{MarketSymbol}, {(IsBuy ? "Buy" : "Sell")}, {Amount},{Price},{Result},{OrderId}";
+
+
         }
     }
 }
