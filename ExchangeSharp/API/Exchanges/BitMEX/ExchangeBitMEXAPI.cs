@@ -224,6 +224,7 @@ namespace ExchangeSharp
             return markets;
         }
         private Dictionary<string, JToken> tickerPairs = new Dictionary<string, JToken>();
+        private Dictionary<string, JToken> orderPairs = new Dictionary<string, JToken>();
         protected override IWebSocket OnGetTickersWebSocket(Action<IReadOnlyCollection<KeyValuePair<string, ExchangeTicker>>> tickers, params string[] marketSymbols)
         {
             return ConnectWebSocket(string.Empty, (_socket, msg) =>
@@ -730,6 +731,7 @@ namespace ExchangeSharp
                 orderRequests.Add(subPayload);
             }
             payload["orders"] = orderRequests;
+
             JToken token = await MakeJsonRequestAsync<JToken>("/order/bulk", BaseUrl, payload, protocol);
             foreach (JToken orderResultToken in token)
             {
@@ -820,6 +822,33 @@ namespace ExchangeSharp
   }
 ]}
             */
+
+            //             var marketSymbol = token["symbol"].ToStringInvariant();
+            //             string m_symbol = marketSymbol+"_" + token["orderID"].ToStringInvariant();
+            //             JToken old;
+            //             
+            //             if (!orderPairs.TryGetValue(m_symbol, out old))
+            //             {
+            //                 orderPairs[m_symbol] = token;
+            //             }
+            //             else
+            //             {
+            //                 foreach (var item in token)
+            //                 {
+            //                     if (item is JProperty)
+            //                     {
+            //                         var jp = (JProperty)item;
+            //                         old[jp.Name] = jp.Value;
+            //                     }
+            //                 }
+            //                 token = old;
+            //             }
+
+            // 
+            ExchangeOrderResult fullOrder;
+            bool had = fullOrders.TryGetValue(token["orderID"].ToStringInvariant(), out fullOrder);
+
+
             ExchangeOrderResult result = new ExchangeOrderResult
             {
                 Amount = token["orderQty"].ConvertInvariant<decimal>(),
@@ -831,12 +860,28 @@ namespace ExchangeSharp
                 MarketSymbol = token["symbol"].ToStringInvariant(),
                 AveragePrice = token["avgPx"].ConvertInvariant<decimal>(),
             };
+            if (had)
+            {
+                result.IsBuy = fullOrder.IsBuy;
+            }
+            else
+            {
+                fullOrder = result;
+            }
+
+            if (!token["side"].ToStringInvariant().EqualsWithOption(string.Empty))
+            {
+                result.IsBuy = token["side"].ToStringInvariant().EqualsWithOption("Buy");
+                fullOrder.IsBuy = result.IsBuy;
+            }
+
 
             // http://www.onixs.biz/fix-dictionary/5.0.SP2/tagNum_39.html
             switch (token["ordStatus"].ToStringInvariant())
             {
                 case "New":
                     result.Result = ExchangeAPIOrderResult.Pending;
+                    //Logger.Error("3ExchangeAPIOrderResult.New:" + token.ToString());
                     break;
                 case "PartiallyFilled":
                     result.Result = ExchangeAPIOrderResult.FilledPartially;
@@ -856,8 +901,32 @@ namespace ExchangeSharp
                     break;
             }
 
-            ExchangeOrderResult fullOrder;
-            if (fullOrders.TryGetValue(result.OrderId, out fullOrder))
+            //if (had)
+            //{
+            //    if (result.Amount != 0)
+            //        fullOrder.Amount = result.Amount;
+            //    if (result.Result != ExchangeAPIOrderResult.Error)
+            //        fullOrder.Result = result.Result;
+            //    if (result.Price != 0)
+            //        fullOrder.Price = result.Price;
+            //    if (result.OrderDate > fullOrder.OrderDate)
+            //        fullOrder.OrderDate = result.OrderDate;
+            //    if (result.AmountFilled != 0)
+            //        fullOrder.AmountFilled = result.AmountFilled;
+            //    if (result.AveragePrice != 0)
+            //        fullOrder.AveragePrice = result.AveragePrice;
+            //    //                 if (result.IsBuy != fullOrder.IsBuy)
+            //    //                     fullOrder.IsBuy = result.IsBuy;
+            //}
+            //else
+            //{
+            //    fullOrder = result;
+            //}
+            //fullOrders[result.OrderId] = result;
+
+
+            //ExchangeOrderResult fullOrder;
+            if (had)
             {
                 if (result.Amount != 0)
                     fullOrder.Amount = result.Amount;
@@ -867,12 +936,6 @@ namespace ExchangeSharp
                     fullOrder.Price = result.Price;
                 if (result.OrderDate > fullOrder.OrderDate)
                     fullOrder.OrderDate = result.OrderDate;
-                if (result.AmountFilled != 0)
-                    fullOrder.AmountFilled = result.AmountFilled;
-                if (result.AveragePrice != 0)
-                    fullOrder.AveragePrice = result.AveragePrice;
-                if (result.IsBuy != fullOrder.IsBuy)
-                    fullOrder.IsBuy = result.IsBuy;
             }
             else
             {
