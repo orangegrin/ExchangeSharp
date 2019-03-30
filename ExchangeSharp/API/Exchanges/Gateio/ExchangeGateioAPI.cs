@@ -23,8 +23,9 @@ namespace ExchangeSharp
 {
     public sealed partial class ExchangeGateioAPI : ExchangeAPI
     {
-        public override string BaseUrl { get; set; } = "https://data.gateio.co/api2/1"; 
-        public string BaseUrlV1 { get; set; } = "https://data.gateio.co/api2/1"; 
+        public override string BaseUrl { get; set; } = "https://data.gateio.io/api2/1";
+        public string QueryBaseUrl { get; set; } = "https://data.gateio.io/api2/1";
+        public string TradeBaseUrl { get; set; } = "https://api.gateio.io/api2/1"; 
         public override string BaseUrlWebSocket { get; set; } = "wss://ws.gate.io/v3";
         //public override string BaseUrlWebSocket { get; set; } = "wss://ws.gateio.ws/v3";
 
@@ -37,7 +38,7 @@ namespace ExchangeSharp
         {
             RequestContentType = "application/x-www-form-urlencoded";
             NonceStyle = NonceStyle.UnixMilliseconds;
-            MarketSymbolSeparator = string.Empty;
+            MarketSymbolSeparator = "_";
             MarketSymbolIsUppercase = false;
             WebSocketOrderBookType = WebSocketOrderBookType.FullBookAlways;
         }
@@ -73,12 +74,18 @@ namespace ExchangeSharp
                     //    "KEY":apiKey,
                     //    "SIGN":getSign(params, secretKey)
                     //}
-                    string signMsg = CryptoUtility.GetFormForPayload(payload, false, false, false);
-                    var sign = CryptoUtility.SHA256SignBase64(signMsg, PrivateApiKey.ToUnsecureBytesUTF8()).UrlEncode();
-                    request.AddHeader("Content-type", "application/x-www-form-urlencoded");
-                    request.AddHeader("KEY", PublicApiKey.ToString());
-                    request.AddHeader("SIGN", sign);
+                    var nonce = payload["nonce"].ConvertInvariant<long>();
+
                     payload.Remove("nonce");
+                    
+                    string signMsg = CryptoUtility.GetFormForPayload(payload, false, false, false);
+                    //string sign = CryptoUtility.SHA512Sign(signMsg, CryptoUtility.ToUnsecureBytesUTF8(PrivateApiKey)).ToStringLowerInvariant();
+                    string sign = CryptoUtility.SHA512Sign(signMsg, CryptoUtility.ToUnsecureBytesUTF8(PrivateApiKey)).Replace("-", "").ToStringLowerInvariant();
+                    //string sign = CryptoUtility.SHA512SignBase64(signMsg, PrivateApiKey.ToUnsecureBytesUTF8()).Replace("-", "").ToStringLowerInvariant(); 
+                    request.AddHeader("Content-type", "application/x-www-form-urlencoded");
+                    request.AddHeader("KEY", PublicApiKey.ToUnsecureString());
+                    request.AddHeader("SIGN", sign);
+                    
                     var msg = CryptoUtility.GetJsonForPayload(payload);
                     await CryptoUtility.WriteToRequestAsync(request, msg);
                 }
@@ -133,7 +140,7 @@ namespace ExchangeSharp
              
              */
             List<ExchangeMarket> markets = new List<ExchangeMarket>();
-            JToken allMarketSymbols = await MakeJsonRequestAsync<JToken>("/marketinfo", BaseUrlV1, null);
+            JToken allMarketSymbols = await MakeJsonRequestAsync<JToken>("/marketinfo", QueryBaseUrl, null);
             Console.Write(allMarketSymbols.ToString());
             foreach (var marketSymbol in allMarketSymbols)
             {
@@ -260,77 +267,143 @@ namespace ExchangeSharp
             return ConnectWebSocket(string.Empty, async (_socket, msg) =>
             {
                 /*
-{{
-  "id": "id1",
-  "status": "ok",
-  "subbed": "market.btcusdt.depth.step0",
-  "ts": 1526749164133
-}}
-
-
-{{
-  "ch": "market.btcusdt.depth.step0",
-  "ts": 1526749254037,
-  "tick": {
-    "bids": [
-      [
-        8268.3,
-        0.101
-      ],
-      [
-        8268.29,
-        0.8248
-      ],
-      
-    ],
-    "asks": [
-      [
-        8275.07,
-        0.1961
-      ],
-	  
-      [
-        8337.1,
-        0.5803
-      ]
-    ],
-    "ts": 1526749254016,
-    "version": 7664175145
-  }
-}}
+                 * 
+                 * ws.send('{"id":12312, "method":"depth.subscribe", "params":["EOS_USTD", 5, "0.0001"]}')
+                 * 
+                     {
+                        "method": "depth.update", 
+                        "params": [
+                            true, 
+                            {
+                                "asks": [
+                                    [                    
+                                        "8000.00",
+                                        "9.6250"
+                                    ]
+                                ],
+                                "bids": [                
+                                    [                    
+                                        "8000.00",
+                                        "9.6250"
+                                    ]                
+                                ]
+                             }, 
+                             "EOS_USDT"
+                        ],
+                        "id": null
+                     }
                  */
-                var str = msg.ToStringFromUTF8Gzip();
+                var str = msg.ToStringFromUTF8();
+                Console.Write(str);
                 JToken token = JToken.Parse(str);
-
-                if (token["status"] != null)
+                if (token["params"] == null)
                 {
                     return;
                 }
-                else if (token["ping"] != null)
-                {
-                    await _socket.SendMessageAsync(str.Replace("ping", "pong"));
-                    return;
-                }
-                var ch = token["ch"].ToStringInvariant();
-                var sArray = ch.Split('.');
-                var marketSymbol = sArray[1].ToStringInvariant();
-                ExchangeOrderBook book = ExchangeAPIExtensions.ParseOrderBookFromJTokenArrays(token["tick"], maxCount: maxCount);
-                book.MarketSymbol = marketSymbol;
+                JArray data = token["params"] as JArray;
+                //bool status = data[0].Value<bool>();
+                //if (!status) {
+                //    return;
+                //}
+                //JToken askBidArray = JToken.Parse(data[1].Value<string>()); 
+                string marketSymbol = data[2].ToStringInvariant();
+                ExchangeOrderBook book = ExchangeAPIExtensions.ParseOrderBookFromJTokenArrays(data[1], maxCount: maxCount);
+                //book.MarketSymbol = marketSymbol;
                 callback(book);
             }, async (_socket) =>
             {
-                if (marketSymbols == null || marketSymbols.Length == 0)
-                {
-                    marketSymbols = (await GetMarketSymbolsAsync()).ToArray();
-                }
-                foreach (string symbol in marketSymbols)
-                {
-                    long id = System.Threading.Interlocked.Increment(ref webSocketId);
-                    var normalizedSymbol = NormalizeMarketSymbol(symbol);
-                    string channel = $"market.{normalizedSymbol}.depth.step0";
-                    await _socket.SendMessageAsync(new { sub = channel, id = "id" + id.ToStringInvariant() });
-                }
+                //var data = { "id":12312, "method":"depth.query", "params":["EOS_USTD", 5, "0.0001"]};
+            
+                long id = System.Threading.Interlocked.Increment(ref webSocketId);
+                object[] a = { "EOS_USTD", 5, "0.0001" };
+                await _socket.SendMessageAsync("{ \"id\":12312, \"method\":\"depth.subscribe\", \"params\":[[\"BTC_USDT\", 20, \"0.1\"],[\"ETH_USDT\", 20, \"0.1\"]]}");
+                //if (marketSymbols == null || marketSymbols.Length == 0)
+                //{
+                //    marketSymbols = (await GetMarketSymbolsAsync()).ToArray();
+                //}
+                //foreach (string symbol in marketSymbols)
+                //{
+                //    long id = System.Threading.Interlocked.Increment(ref webSocketId);
+                //    var normalizedSymbol = NormalizeMarketSymbol(symbol);
+                //    //'{"id":12312, "method":"depth.query", "params":["EOS_USTD", 5, "0.0001"]}'
+                //    string channel = $"depth.query";
+                //    string params = $"["EOS_USTD", 5, "0.0001"]";
+                //    await _socket.SendMessageAsync(new { method = channel, id = id });
+                //}
             });
+        }
+
+        protected override IWebSocket OnGetOrderDetailsWebSocket(Action<ExchangeOrderResult> callback)
+        {
+            //return base.OnGetOrderDetailsWebSocket(callback);
+
+            return ConnectWebSocket(string.Empty, (_socket, msg) =>
+            {
+
+                var str = msg.ToStringFromUTF8();
+                JToken token = JToken.Parse(str);
+                Console.WriteLine(token);
+                Console.WriteLine(token["error"].ToString());
+                if (token["error"].Type != JTokenType.Null)
+                {
+                    Logger.Info(token["error"].ToStringInvariant());
+                    return Task.CompletedTask;
+                }
+                //{"error": null, "result": {"status": "success"}, "id": 12312}
+                if (token["id"].Value<int>() == 1 && token["result"]["status"].ToStringInvariant() == "success")
+                {
+                    //{ "id":12312, "method":"order.subscribe", "params":["EOS_USDT"]}
+                    Dictionary<string, object> payload = new Dictionary<string, object>
+                    {
+                         { "id", 2 },
+                         { "method", "order.subscribe" },
+                         { "params",  new object[] { "ETH_USDT" } }
+                    };
+                    var payloadJson = CryptoUtility.GetJsonForPayload(payload);
+                    _socket.SendMessageAsync(payloadJson);
+                    return Task.CompletedTask;
+                }
+                if (token["params"].Type == JTokenType.Null)
+                {
+                    return Task.CompletedTask;
+                }
+                //{ "method": "order.update", "params": [ 3, { "id": 34628963, "market": "EOS_USDT", "orderType": 1, "type": 2, "user": 602123, "ctime": 1523013969.6271579, 
+                //"mtime": 1523013969.6271579, "price": "0.1", "amount": "1000", "left": "1000", "filledAmount": "0", "filledTotal": "0", "dealFee": "0", } ], "id": null }
+                var action = token["method"].ToStringInvariant();
+                JArray data = token["params"] as JArray;
+                var order = ParseWebsocketOrder(data);
+                callback(order);
+                
+                return Task.CompletedTask;
+            }, async (_socket) =>
+            {
+                var payloadJSON = GeneratePayloadJSON();
+                await _socket.SendMessageAsync(payloadJSON.Result);
+                
+            });
+
+        }
+
+        private async Task<string> GeneratePayloadJSON()
+        {
+            //{
+            //    "id": 12312, 
+            //    "method": "server.sign",
+            //    "params": [api_key, signature, nonce]
+            // }
+            object nonce = await GenerateNonceAsync();
+            Console.WriteLine(nonce.ToString());
+            //string signature = CryptoUtility.SHA512Sign(nonce.ToString(), PrivateApiKey.ToUnsecureString());
+
+            string signature = CryptoUtility.SHA512SignBase64(nonce.ToString(), CryptoUtility.ToUnsecureBytesUTF8(PrivateApiKey));
+            Console.WriteLine(signature);
+            Dictionary<string, object> payload = new Dictionary<string, object>
+                {
+                     { "id", 1 },
+                     { "method", "server.sign" },
+                     { "params",  new object[] { PublicApiKey.ToUnsecureString(), signature, nonce } }
+                };
+            return CryptoUtility.GetJsonForPayload(payload);
         }
 
         protected override async Task<IReadOnlyDictionary<string, ExchangeCurrency>> OnGetCurrenciesAsync()
@@ -480,7 +553,7 @@ namespace ExchangeSharp
  */
             Dictionary<string, string> accounts = new Dictionary<string, string>();
             var payload = await GetNoncePayloadAsync();
-            JToken data = await MakeJsonRequestAsync<JToken>("/account/accounts", BaseUrlV1, payload);
+            JToken data = await MakeJsonRequestAsync<JToken>("/account/accounts", QueryBaseUrl, payload);
             foreach (var acc in data)
             {
                 string key = acc["type"].ToStringInvariant() + "_" + acc["subtype"].ToStringInvariant();
@@ -520,10 +593,10 @@ namespace ExchangeSharp
         "balance": "16.467000000000000000"
       },
              */
-            var account_id = await GetAccountID();
             Dictionary<string, decimal> amounts = new Dictionary<string, decimal>();
             var payload = await GetNoncePayloadAsync();
-            JToken token = await MakeJsonRequestAsync<JToken>($"/account/accounts/{account_id}/balance", BaseUrlV1, payload);
+            JToken token = await MakeJsonRequestAsync<JToken>($"/private/balances", QueryBaseUrl, payload,"POST");
+            Console.WriteLine(token);
             var list = token["list"];
             foreach (var item in list)
             {
@@ -551,7 +624,7 @@ namespace ExchangeSharp
 
             Dictionary<string, decimal> amounts = new Dictionary<string, decimal>();
             var payload = await GetNoncePayloadAsync();
-            JToken token = await MakeJsonRequestAsync<JToken>($"/account/accounts/{account_id}/balance", BaseUrlV1, payload);
+            JToken token = await MakeJsonRequestAsync<JToken>($"/account/accounts/{account_id}/balance", QueryBaseUrl, payload);
             var list = token["list"];
             foreach (var item in list)
             {
@@ -600,8 +673,8 @@ namespace ExchangeSharp
             }}
              */
             var payload = await GetNoncePayloadAsync();
-            JToken data = await MakeJsonRequestAsync<JToken>($"/order/orders/{orderId}", BaseUrlV1, payload);
-            return ParseOrder(data);
+            JToken data = await MakeJsonRequestAsync<JToken>($"/private/getOrder", QueryBaseUrl, payload);
+            return ParseOrder(data["order"]);
         }
 
         protected override async Task<IEnumerable<ExchangeOrderResult>> OnGetCompletedOrderDetailsAsync(string marketSymbol = null, DateTime? afterDate = null)
@@ -616,7 +689,7 @@ namespace ExchangeSharp
             {
                 payload.Add("start-date", afterDate.Value.ToString("yyyy-MM-dd"));
             }
-            JToken data = await MakeJsonRequestAsync<JToken>("/order/orders", BaseUrlV1, payload);
+            JToken data = await MakeJsonRequestAsync<JToken>("/order/orders", QueryBaseUrl, payload);
             foreach (var prop in data)
             {
                 orders.Add(ParseOrder(prop));
@@ -626,14 +699,16 @@ namespace ExchangeSharp
 
         protected override async Task<IEnumerable<ExchangeOrderResult>> OnGetOpenOrderDetailsAsync(string marketSymbol = null)
         {
-            if (marketSymbol == null) { throw new APIException("symbol cannot be null"); }
+            //if (marketSymbol == null) { throw new APIException("symbol cannot be null"); }
 
             List<ExchangeOrderResult> orders = new List<ExchangeOrderResult>();
             var payload = await GetNoncePayloadAsync();
-            payload.Add("symbol", marketSymbol);
-            payload.Add("states", "pre-submitted,submitting,submitted,partial-filled");
-            JToken data = await MakeJsonRequestAsync<JToken>("/order/orders", BaseUrlV1, payload);
-            foreach (var prop in data)
+            if (marketSymbol != ""){
+                payload.Add("currencyPair", marketSymbol);
+            }
+            JToken data = await MakeJsonRequestAsync<JToken>("/private/openOrders", QueryBaseUrl, payload,"POST");
+            Console.Write(data.ToString());
+            foreach (var prop in data["orders"])
             {
                 orders.Add(ParseOrder(prop));
             }
@@ -642,41 +717,71 @@ namespace ExchangeSharp
 
         protected override async Task<ExchangeOrderResult> OnPlaceOrderAsync(ExchangeOrderRequest order)
         {
-            var account_id = await GetAccountID(order.IsMargin, order.MarketSymbol);
-
-            var payload = await GetNoncePayloadAsync();
-            payload.Add("account-id", account_id);
-            payload.Add("symbol", order.MarketSymbol);
-            payload.Add("type", order.IsBuy ? "buy" : "sell");
-            payload.Add("source", order.IsMargin ? "margin-api" : "api");
-
+            //var account_id = await GetAccountID(order.IsMargin, order.MarketSymbol);
+            Dictionary<string, object> payload =  await GetNoncePayloadAsync();
+            payload["currencyPair"] = order.MarketSymbol;
+            payload["amount"] = order.Amount;
+            if (order.OrderType != OrderType.Limit) {
+                payload["orderType"] = "ioc";
+            };
+            payload["rate"] = order.Price;
+            
+        
+            
             decimal outputQuantity = await ClampOrderQuantity(order.MarketSymbol, order.Amount);
             decimal outputPrice = await ClampOrderPrice(order.MarketSymbol, order.Price);
+            //payload["amount"] = outputQuantity.ToStringInvariant();
 
-            payload["amount"] = outputQuantity.ToStringInvariant();
+            
+            //if (order.OrderType == OrderType.Market)
+            //{
+            //    payload["type"] += "-market";
+            //}
+            //else
+            //{
+            //    payload["type"] += "-limit";
+            //    payload["price"] = outputPrice.ToStringInvariant();
+            //}
 
-            if (order.OrderType == OrderType.Market)
+            //order.ExtraParameters.CopyTo(payload);
+            // buy </private/buy>
+            //参数名 参数类型    必填 描述  示例:
+            //currencyPair String  是 交易币种对(如ltc_btc, ltc_btc) ltc_btc
+            //rate    String 是   价格  1000
+            //amount String  是 最近30天交易量    800
+            //orderType String  否 订单类型(“”：普通订单（默认）；“ioc”：立即执行否则取消订单（Immediate-Or - Cancel，IOC）)	ioc
+
+            //sell </private/sell>
+            JToken obj;
+            if (order.IsBuy)
             {
-                payload["type"] += "-market";
+                obj = await MakeJsonRequestAsync<JToken>($"/private/buy", TradeBaseUrl, payload, "POST");
             }
             else
             {
-                payload["type"] += "-limit";
-                payload["price"] = outputPrice.ToStringInvariant();
+                obj = await MakeJsonRequestAsync<JToken>($"/private/sell", TradeBaseUrl, payload, "POST");
             }
-
-            order.ExtraParameters.CopyTo(payload);
-
-            JToken obj = await MakeJsonRequestAsync<JToken>("/order/orders/place", BaseUrlV1, payload, "POST");
+             
             order.Amount = outputQuantity;
             order.Price = outputPrice;
             return ParsePlaceOrder(obj, order);
         }
 
-        protected override async Task OnCancelOrderAsync(string orderId, string marketSymbol = null)
+        protected override async Task OnCancelOrderAsync(string orderId, string marketSymbol)
         {
             var payload = await GetNoncePayloadAsync();
-            await MakeJsonRequestAsync<JToken>($"/order/orders/{orderId}/submitcancel", BaseUrlV1, payload, "POST");
+            payload["orderNumber"] = orderId;
+            payload["currencyPair"] = marketSymbol;
+            await MakeJsonRequestAsync<JToken>($"/private/cancelOrder", TradeBaseUrl, payload, "POST");
+        }
+
+        protected async Task OnCancelAllOrderAsync(int orderType, string marketSymbol)
+        {
+            //orderType:下单类型(0:卖出,1:买入,-1:不限制)
+            var payload = await GetNoncePayloadAsync();
+            payload["type"] = orderType;
+            payload["currencyPair"] = marketSymbol;
+            await MakeJsonRequestAsync<JToken>($"/private/cancelAllOrders", TradeBaseUrl, payload, "POST");
         }
 
         protected override async Task<IEnumerable<ExchangeTransaction>> OnGetDepositHistoryAsync(string currency)
@@ -688,7 +793,7 @@ namespace ExchangeSharp
             payload["from"] = 5;
             payload["size"] = 12;
 
-            var deposits = await MakeJsonRequestAsync<JToken>($"/query/deposit-withdraw", BaseUrlV1, payload);
+            var deposits = await MakeJsonRequestAsync<JToken>($"/query/deposit-withdraw", QueryBaseUrl, payload);
             var result = deposits
                 .Where(d => d["type"].ToStringInvariant() == "deposit")
                 .Select(d => new ExchangeTransaction
@@ -706,6 +811,7 @@ namespace ExchangeSharp
 
             return result;
         }
+
         private TransactionStatus ToDepositStatus(string status)
         {
             switch (status)
@@ -735,7 +841,7 @@ namespace ExchangeSharp
             payload.Add("coinName", symbol);
             payload["method"] = "POST";
             // "return":{"address": 1UHAnAWvxDB9XXETsi7z483zRRBmcUZxb3,"processed_amount": 1.00000000,"server_time": 1437146228 }
-            JToken token = await MakeJsonRequestAsync<JToken>("/", BaseUrlV1, payload, "POST");
+            JToken token = await MakeJsonRequestAsync<JToken>("/", QueryBaseUrl, payload, "POST");
             return new ExchangeDepositDetails
             {
                 Address = token["address"].ToStringInvariant(),
@@ -754,7 +860,7 @@ namespace ExchangeSharp
             if (withdrawalRequest.AddressTag != null)
                 payload["attr-tag"] = withdrawalRequest.AddressTag;
 
-            JToken result = await MakeJsonRequestAsync<JToken>("/dw/withdraw/api/create", BaseUrlV1, payload, "POST");
+            JToken result = await MakeJsonRequestAsync<JToken>("/dw/withdraw/api/create", QueryBaseUrl, payload, "POST");
 
             return new ExchangeWithdrawalResponse
             {
@@ -767,10 +873,10 @@ namespace ExchangeSharp
         {
             Dictionary<string, decimal> marginAmounts = new Dictionary<string, decimal>();
 
-            JToken resultAccounts = await MakeJsonRequestAsync<JToken>("/account/accounts", BaseUrlV1, await GetNoncePayloadAsync());
+            JToken resultAccounts = await MakeJsonRequestAsync<JToken>("/account/accounts", QueryBaseUrl, await GetNoncePayloadAsync());
 
             // Take only first account?
-            JToken resultBalances = await MakeJsonRequestAsync<JToken>($"/account/accounts/{resultAccounts.First["id"].ConvertInvariant<int>()}/balance", BaseUrlV1, await GetNoncePayloadAsync());
+            JToken resultBalances = await MakeJsonRequestAsync<JToken>($"/account/accounts/{resultAccounts.First["id"].ConvertInvariant<int>()}/balance", QueryBaseUrl, await GetNoncePayloadAsync());
 
             foreach (var balance in resultBalances["list"])
             {
@@ -816,38 +922,99 @@ namespace ExchangeSharp
             return result;
         }
 
+        private ExchangeAPIOrderResult ParseWebsocketState(int state, decimal amount, decimal amountFilled)
+        {
+            if (state == 1)
+            {
+                return ExchangeAPIOrderResult.Pending;
+            }
+            else if (state == 2)
+            {
+                if (amountFilled < amount)
+                {
+                    return ExchangeAPIOrderResult.FilledPartially;
+                }
+                else if (amount == amountFilled)
+                {
+                    return ExchangeAPIOrderResult.Filled;
+                }
+            }
+            else if (state == 3)
+            {
+                if (amount == amountFilled)
+                {
+                    return ExchangeAPIOrderResult.Filled;
+                }
+                else if (amount < amountFilled)
+                {
+                    return ExchangeAPIOrderResult.Canceled;
+                }
+
+            }
+            return ExchangeAPIOrderResult.Unknown;
+        }
+
         private ExchangeAPIOrderResult ParseState(string state)
         {
-            switch (state)
+            if (state == "open")
             {
-                case "pre-submitted":
-                case "submitting":
-                case "submitted":
-                    return ExchangeAPIOrderResult.Pending;
-                case "partial-filled":
-                    return ExchangeAPIOrderResult.FilledPartially;
-                case "filled":
-                    return ExchangeAPIOrderResult.Filled;
-                case "partial-canceled":
-                case "canceled":
-                    return ExchangeAPIOrderResult.Canceled;
-                default:
-                    return ExchangeAPIOrderResult.Unknown;
+                return ExchangeAPIOrderResult.Pending;
             }
+            else if (state == "cancelled")
+            {
+               
+                return ExchangeAPIOrderResult.Canceled;
+            }
+            else if (state == "closed")
+            {
+                return ExchangeAPIOrderResult.Filled;
+
+            }
+            return ExchangeAPIOrderResult.Unknown;
+        }
+
+        private ExchangeOrderResult ParseWebsocketOrder(JArray tokenArray)
+        {
+            JToken token = tokenArray[1];
+            int orderStatus = tokenArray[0].Value<int>();
+            decimal Amount = token["amount"].ConvertInvariant<decimal>();
+            decimal AmountFilled = token["filledTotal"].ConvertInvariant<decimal>();
+            ExchangeOrderResult result = new ExchangeOrderResult()
+            {
+                OrderId = token["id"].ToStringInvariant(),
+                MarketSymbol = token["market"].ToStringInvariant(),
+                Amount = Amount,
+                AmountFilled = AmountFilled,
+                Price = token["price"].ConvertInvariant<decimal>(),
+                OrderDate = CryptoUtility.UnixTimeStampToDateTimeMilliseconds(token["ctime"].ConvertInvariant<long>()),
+                IsBuy = token["type"].ConvertInvariant<int>()==1?false:true,
+                Result = ParseWebsocketState(orderStatus, Amount,AmountFilled),
+            };
+
+            if (result.Price == 0 && result.AmountFilled != 0m)
+            {
+                var amountCash = token["field-cash-amount"].ConvertInvariant<decimal>();
+                result.Price = amountCash / result.AmountFilled;
+            }
+
+            return result;
         }
 
         private ExchangeOrderResult ParseOrder(JToken token)
         {
+            
+            decimal Amount = token["amount"].ConvertInvariant<decimal>();
+            decimal AmountFilled = token["filledAmount"].ConvertInvariant<decimal>();
             ExchangeOrderResult result = new ExchangeOrderResult()
             {
-                OrderId = token["id"].ToStringInvariant(),
-                MarketSymbol = token["symbol"].ToStringInvariant(),
-                Amount = token["amount"].ConvertInvariant<decimal>(),
-                AmountFilled = token["field-amount"].ConvertInvariant<decimal>(),
-                Price = token["price"].ConvertInvariant<decimal>(),
-                OrderDate = CryptoUtility.UnixTimeStampToDateTimeMilliseconds(token["created-at"].ConvertInvariant<long>()),
-                IsBuy = token["type"].ToStringInvariant().StartsWith("buy"),
-                Result = ParseState(token["state"].ToStringInvariant()),
+                OrderId = token["orderNumber"].ToStringInvariant(),
+                MarketSymbol = token["currencyPair"].ToStringInvariant(),
+                Amount = Amount,
+                AmountFilled = AmountFilled,
+                Price = token["rate"].ConvertInvariant<decimal>(),
+                OrderDate = CryptoUtility.UnixTimeStampToDateTimeMilliseconds(token["timestamp"].ConvertInvariant<long>()*1000),
+                IsBuy = token["type"].ToStringInvariant().StartsWith("buy")  ? true : false,
+                Result = ParseState(token["status"].ToStringInvariant()),
             };
 
             if (result.Price == 0 && result.AmountFilled != 0m)
