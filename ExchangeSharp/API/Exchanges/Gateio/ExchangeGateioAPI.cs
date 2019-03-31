@@ -23,9 +23,9 @@ namespace ExchangeSharp
 {
     public sealed partial class ExchangeGateioAPI : ExchangeAPI
     {
-        public override string BaseUrl { get; set; } = "https://data.gateio.io/api2/1";
-        public string QueryBaseUrl { get; set; } = "https://data.gateio.io/api2/1";
-        public string TradeBaseUrl { get; set; } = "https://api.gateio.io/api2/1"; 
+        public override string BaseUrl { get; set; } = "data.gateio.io/api2/1";
+        public string QueryBaseUrl { get; set; } = "data.gateio.io/api2/1";
+        public string TradeBaseUrl { get; set; } = "api.gateio.io/api2/1"; 
         public override string BaseUrlWebSocket { get; set; } = "wss://ws.gate.io/v3";
         //public override string BaseUrlWebSocket { get; set; } = "wss://ws.gateio.ws/v3";
 
@@ -79,15 +79,15 @@ namespace ExchangeSharp
                     payload.Remove("nonce");
                     
                     string signMsg = CryptoUtility.GetFormForPayload(payload, false, false, false);
-                    //string sign = CryptoUtility.SHA512Sign(signMsg, CryptoUtility.ToUnsecureBytesUTF8(PrivateApiKey)).ToStringLowerInvariant();
-                    string sign = CryptoUtility.SHA512Sign(signMsg, CryptoUtility.ToUnsecureBytesUTF8(PrivateApiKey)).Replace("-", "").ToStringLowerInvariant();
+                    string sign = CryptoUtility.SHA512Sign(signMsg, CryptoUtility.ToUnsecureBytesUTF8(PrivateApiKey)).ToStringLowerInvariant();
+                    //string sign = CryptoUtility.SHA512Sign(signMsg, CryptoUtility.ToUnsecureBytesUTF8(PrivateApiKey)).Replace("-", "").ToStringLowerInvariant();
                     //string sign = CryptoUtility.SHA512SignBase64(signMsg, PrivateApiKey.ToUnsecureBytesUTF8()).Replace("-", "").ToStringLowerInvariant(); 
                     request.AddHeader("Content-type", "application/x-www-form-urlencoded");
                     request.AddHeader("KEY", PublicApiKey.ToUnsecureString());
                     request.AddHeader("SIGN", sign);
                     
                     var msg = CryptoUtility.GetJsonForPayload(payload);
-                    await CryptoUtility.WriteToRequestAsync(request, msg);
+                    await CryptoUtility.WriteToRequestAsync(request, signMsg);
                 }
             }
         }
@@ -720,28 +720,16 @@ namespace ExchangeSharp
             //var account_id = await GetAccountID(order.IsMargin, order.MarketSymbol);
             Dictionary<string, object> payload =  await GetNoncePayloadAsync();
             payload["currencyPair"] = order.MarketSymbol;
-            payload["amount"] = order.Amount;
-            if (order.OrderType != OrderType.Limit) {
+            payload["rate"] = order.Price.ToString();
+            payload["amount"] = order.Amount.ToString();
+            if (order.OrderType != OrderType.Limit)
+            {
                 payload["orderType"] = "ioc";
             };
-            payload["rate"] = order.Price;
-            
-        
             
             decimal outputQuantity = await ClampOrderQuantity(order.MarketSymbol, order.Amount);
             decimal outputPrice = await ClampOrderPrice(order.MarketSymbol, order.Price);
-            //payload["amount"] = outputQuantity.ToStringInvariant();
-
-            
-            //if (order.OrderType == OrderType.Market)
-            //{
-            //    payload["type"] += "-market";
-            //}
-            //else
-            //{
-            //    payload["type"] += "-limit";
-            //    payload["price"] = outputPrice.ToStringInvariant();
-            //}
+   
 
             //order.ExtraParameters.CopyTo(payload);
             // buy </private/buy>
@@ -769,17 +757,25 @@ namespace ExchangeSharp
 
         protected override async Task OnCancelOrderAsync(string orderId, string marketSymbol)
         {
-            var payload = await GetNoncePayloadAsync();
-            payload["orderNumber"] = orderId;
-            payload["currencyPair"] = marketSymbol;
-            await MakeJsonRequestAsync<JToken>($"/private/cancelOrder", TradeBaseUrl, payload, "POST");
+            if (orderId == null )
+            {
+                await OnCancelAllOrderAsync(-1, marketSymbol);
+            }
+            else
+            {
+                var payload = await GetNoncePayloadAsync();
+                payload["orderNumber"] = orderId;
+                payload["currencyPair"] = marketSymbol;
+                await MakeJsonRequestAsync<JToken>($"/private/cancelOrder", TradeBaseUrl, payload, "POST");
+            }
+           
         }
 
         protected async Task OnCancelAllOrderAsync(int orderType, string marketSymbol)
         {
             //orderType:下单类型(0:卖出,1:买入,-1:不限制)
             var payload = await GetNoncePayloadAsync();
-            payload["type"] = orderType;
+            payload["type"] = orderType.ToString();
             payload["currencyPair"] = marketSymbol;
             await MakeJsonRequestAsync<JToken>($"/private/cancelAllOrders", TradeBaseUrl, payload, "POST");
         }
@@ -913,7 +909,7 @@ namespace ExchangeSharp
                 Amount = order.Amount,
                 Price = order.Price,
                 IsBuy = order.IsBuy,
-                OrderId = token.ToStringInvariant(),
+                OrderId = token["orderNumber"].ToStringInvariant(),
                 MarketSymbol = order.MarketSymbol
             };
             result.AveragePrice = result.Price;
