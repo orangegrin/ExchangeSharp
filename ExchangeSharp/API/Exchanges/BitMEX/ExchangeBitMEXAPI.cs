@@ -974,4 +974,5 @@ namespace ExchangeSharp
     }
 
     public partial class ExchangeName { public const string BitMEX = "BitMEX"; }
+    public partial class ExchangeFee { public const decimal BitMEX = -0.00025m; }
 }
