@@ -39,7 +39,7 @@ namespace ExchangeSharp
             RequestContentType = "application/x-www-form-urlencoded";
             NonceStyle = NonceStyle.UnixMilliseconds;
             MarketSymbolSeparator = "_";
-            MarketSymbolIsUppercase = false;
+            MarketSymbolIsUppercase = true;
             WebSocketOrderBookType = WebSocketOrderBookType.FullBookAlways;
         }
 
@@ -313,23 +313,35 @@ namespace ExchangeSharp
             }, async (_socket) =>
             {
                 //var data = { "id":12312, "method":"depth.query", "params":["EOS_USTD", 5, "0.0001"]};
-            
-                long id = System.Threading.Interlocked.Increment(ref webSocketId);
-                object[] a = { "EOS_USTD", 5, "0.0001" };
-                await _socket.SendMessageAsync("{ \"id\":12312, \"method\":\"depth.subscribe\", \"params\":[[\"BTC_USDT\", 20, \"0.1\"],[\"ETH_USDT\", 20, \"0.1\"]]}");
+
+                //long id = System.Threading.Interlocked.Increment(ref webSocketId);
+                //object[] a = { "EOS_USTD", 5, "0.0001" };
+                //await _socket.SendMessageAsync("{ \"id\":12312, \"method\":\"depth.subscribe\", \"params\":[[\"BTC_USDT\", 20, \"0.1\"],[\"ETH_USDT\", 20, \"0.1\"]]}");
+                //"{\"id\":12321,\"method\":\"depth.subscribe\",\"params\":[[\"btc_usdt\",5,\"0.0001\"]]}"
                 //if (marketSymbols == null || marketSymbols.Length == 0)
                 //{
                 //    marketSymbols = (await GetMarketSymbolsAsync()).ToArray();
                 //}
-                //foreach (string symbol in marketSymbols)
-                //{
-                //    long id = System.Threading.Interlocked.Increment(ref webSocketId);
-                //    var normalizedSymbol = NormalizeMarketSymbol(symbol);
-                //    //'{"id":12312, "method":"depth.query", "params":["EOS_USTD", 5, "0.0001"]}'
-                //    string channel = $"depth.query";
-                //    string params = $"["EOS_USTD", 5, "0.0001"]";
-                //    await _socket.SendMessageAsync(new { method = channel, id = id });
-                //}
+
+                foreach (string symbol in marketSymbols)
+                {
+                    //long id = System.Threading.Interlocked.Increment(ref webSocketId);
+                    var normalizedSymbol = NormalizeMarketSymbol(symbol);
+                    Console.WriteLine("M:"+normalizedSymbol);
+                    //'{"id":12312, "method":"depth.query", "params":["EOS_USTD", 5, "0.0001"]}'
+                    string channel = "depth.subscribe";
+                    object[] a = { normalizedSymbol, 5, "0.0001" };
+                    object[] b = { a };
+                    Dictionary<string, object> payload = new Dictionary<string, object>
+                    {
+                        { "id", 12321 },
+                        { "method", channel },
+                        { "params",  b }
+                    };
+                    string orderbook_sub_str = CryptoUtility.GetJsonForPayload(payload);
+                    await _socket.SendMessageAsync(orderbook_sub_str);
+                    //await _socket.SendMessageAsync(new { id = 12321, method = "depth.subscribe", @params = b});
+                 }
             });
         }
 
@@ -357,7 +369,7 @@ namespace ExchangeSharp
                     {
                          { "id", 2 },
                          { "method", "order.subscribe" },
-                         { "params",  new object[] { "ETH_USDT" } }
+                         { "params",  new object[] { "" } }
                     };
                     var payloadJson = CryptoUtility.GetJsonForPayload(payload);
                     _socket.SendMessageAsync(payloadJson);
