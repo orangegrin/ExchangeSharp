@@ -237,6 +237,7 @@ namespace ExchangeSharp
         public static void Debug(string text, params object[] args)
         {
             Write(ExchangeSharp.LogLevel.Debug, text, args);
+            Console.WriteLine(DateTime.Now+" " +text, args);
         }
 
         /// <summary>
