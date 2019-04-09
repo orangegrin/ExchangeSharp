@@ -714,7 +714,6 @@ namespace ExchangeSharp
         {
             Dictionary<string, object> payload = await GetNoncePayloadAsync();
             AddOrderToPayload(order, payload);
-            Console.WriteLine(JsonConvert.SerializeObject(payload).ToString());
             JToken token = await MakeJsonRequestAsync<JToken>("/order", BaseUrl, payload, "POST");
             return ParseOrder(token);
         }
@@ -888,14 +887,10 @@ namespace ExchangeSharp
                     break;
                 case "Filled":
                     result.Result = ExchangeAPIOrderResult.Filled;
-                    Logger.Error("1ExchangeAPIOrderResult.Filled:" + result.ToExcleString());
-                    Logger.Error("2ExchangeAPIOrderResult.Filled:" + token["side"].ToStringInvariant());
-                    Logger.Error("3ExchangeAPIOrderResult.Filled:" + token.ToString());
                     break;
                 case "Canceled":
                     result.Result = ExchangeAPIOrderResult.Canceled;
                     break;
-
                 default:
                     result.Result = ExchangeAPIOrderResult.Error;
                     break;
