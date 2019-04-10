@@ -985,5 +985,9 @@ namespace ExchangeSharp
     }
 
     public partial class ExchangeName { public const string Binance = "Binance"; }
-    public partial class ExchangeFee { public const decimal Binance = 0.001m; }
+    public partial class ExchangeFee
+    {
+        public const decimal Binance_EOS = 0.00075m;
+    }
+
 }
