@@ -931,6 +931,10 @@ namespace ExchangeSharp
                     fullOrder.Price = result.Price;
                 if (result.OrderDate > fullOrder.OrderDate)
                     fullOrder.OrderDate = result.OrderDate;
+                if (result.AmountFilled != 0)
+                    fullOrder.AmountFilled = result.AmountFilled;
+                if (result.AveragePrice != 0)
+                    fullOrder.AveragePrice = result.AveragePrice;
             }
             else
             {
@@ -969,5 +973,9 @@ namespace ExchangeSharp
     }
 
     public partial class ExchangeName { public const string BitMEX = "BitMEX"; }
-    public partial class ExchangeFee { public const decimal BitMEX_EOS = -0.0005m; }
+    public partial class ExchangeFee
+    {
+        public const decimal BitMEX_EOS = -0.0005m;
+        public const decimal BitMEX_ETHM19 = -0.0005m;
+    }
 }

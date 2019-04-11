@@ -988,6 +988,7 @@ namespace ExchangeSharp
     public partial class ExchangeFee
     {
         public const decimal Binance_EOS = 0.00075m;
+        public const decimal Binance_ETH = 0.00075m;
     }
 
 }
