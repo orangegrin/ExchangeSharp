@@ -382,7 +382,8 @@ namespace ExchangeSharp
                  return Task.CompletedTask;
              }, async (_socket) =>
              {
-                 fullOrders.Clear();
+                 //连接中断也不应该删除历史信息
+                 //fullOrders.Clear();
                  var payloadJSON = GeneratePayloadJSON();
                  await _socket.SendMessageAsync(payloadJSON.Result);
              });
@@ -940,9 +941,17 @@ namespace ExchangeSharp
             {
                 fullOrder = result;
             }
-            fullOrders[result.OrderId] = fullOrder;
+            if(result==null)
+            {
+                Logger.Error("ExchangeAPIOrderResult:" + token.ToString());
+                return fullOrder;
+            }
+            else
+            {
+                fullOrders[result.OrderId] = fullOrder;
+                return fullOrder;
+            }
 
-            return fullOrder;
         }
 
 
