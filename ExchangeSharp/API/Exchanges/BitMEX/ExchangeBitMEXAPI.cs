@@ -382,7 +382,8 @@ namespace ExchangeSharp
                  return Task.CompletedTask;
              }, async (_socket) =>
              {
-                 fullOrders.Clear();
+                 //连接中断也不应该删除历史信息
+                 //fullOrders.Clear();
                  var payloadJSON = GeneratePayloadJSON();
                  await _socket.SendMessageAsync(payloadJSON.Result);
              });
