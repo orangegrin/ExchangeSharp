@@ -842,13 +842,11 @@ namespace ExchangeSharp
             //                 }
             //                 token = old;
             //             }
-
             // 
-            ExchangeOrderResult fullOrder;
-            bool had = fullOrders.TryGetValue(token["orderID"].ToStringInvariant(), out fullOrder);
 
-
-            ExchangeOrderResult result = new ExchangeOrderResult
+            ExchangeOrderResult oldOrder;
+            bool alreadyExists = fullOrders.TryGetValue(token["orderID"].ToStringInvariant(), out oldOrder);
+            ExchangeOrderResult newOrder = new ExchangeOrderResult
             {
                 Amount = token["orderQty"].ConvertInvariant<decimal>(),
                 AmountFilled = token["cumQty"].ConvertInvariant<decimal>(),
@@ -856,126 +854,60 @@ namespace ExchangeSharp
                 IsBuy = token["side"].ToStringInvariant().EqualsWithOption("Buy"),
                 OrderDate = token["transactTime"].ConvertInvariant<DateTime>(),
                 OrderId = token["orderID"].ToStringInvariant(),
-                MarketSymbol = token["symbol"].ToStringInvariant(),
-                AveragePrice = token["avgPx"].ConvertInvariant<decimal>(),
+                MarketSymbol = token["symbol"].ToStringInvariant()
             };
-            if (had)
-            {
-                result.IsBuy = fullOrder.IsBuy;
-            }
-            else
-            {
-                fullOrder = result;
-            }
-
-            if (!token["side"].ToStringInvariant().EqualsWithOption(string.Empty))
-            {
-                result.IsBuy = token["side"].ToStringInvariant().EqualsWithOption("Buy");
-                fullOrder.IsBuy = result.IsBuy;
-            }
-
 
             // http://www.onixs.biz/fix-dictionary/5.0.SP2/tagNum_39.html
             switch (token["ordStatus"].ToStringInvariant())
             {
                 case "New":
-                    result.Result = ExchangeAPIOrderResult.Pending;
-                    //Logger.Error("3ExchangeAPIOrderResult.New:" + token.ToString());
+                    newOrder.Result = ExchangeAPIOrderResult.Pending;
                     break;
                 case "PartiallyFilled":
-                    result.Result = ExchangeAPIOrderResult.FilledPartially;
+                    newOrder.Result = ExchangeAPIOrderResult.FilledPartially;
                     break;
                 case "Filled":
-                    result.Result = ExchangeAPIOrderResult.Filled;
+                    newOrder.Result = ExchangeAPIOrderResult.Filled;
                     break;
                 case "Canceled":
-                    result.Result = ExchangeAPIOrderResult.Canceled;
+                    newOrder.Result = ExchangeAPIOrderResult.Canceled;
                     break;
                 default:
-                    result.Result = ExchangeAPIOrderResult.Error;
+                    newOrder.Result = ExchangeAPIOrderResult.Error;
                     break;
             }
 
-            //if (had)
-            //{
-            //    if (result.Amount != 0)
-            //        fullOrder.Amount = result.Amount;
-            //    if (result.Result != ExchangeAPIOrderResult.Error)
-            //        fullOrder.Result = result.Result;
-            //    if (result.Price != 0)
-            //        fullOrder.Price = result.Price;
-            //    if (result.OrderDate > fullOrder.OrderDate)
-            //        fullOrder.OrderDate = result.OrderDate;
-            //    if (result.AmountFilled != 0)
-            //        fullOrder.AmountFilled = result.AmountFilled;
-            //    if (result.AveragePrice != 0)
-            //        fullOrder.AveragePrice = result.AveragePrice;
-            //    //                 if (result.IsBuy != fullOrder.IsBuy)
-            //    //                     fullOrder.IsBuy = result.IsBuy;
-            //}
-            //else
-            //{
-            //    fullOrder = result;
-            //}
-            //fullOrders[result.OrderId] = result;
-
-
-            //ExchangeOrderResult fullOrder;
-            if (had)
+            if (alreadyExists)
             {
-                if (result.Amount != 0)
-                    fullOrder.Amount = result.Amount;
-                if (result.Result != ExchangeAPIOrderResult.Error)
-                    fullOrder.Result = result.Result;
-                if (result.Price != 0)
-                    fullOrder.Price = result.Price;
-                if (result.OrderDate > fullOrder.OrderDate)
-                    fullOrder.OrderDate = result.OrderDate;
-                if (result.AmountFilled != 0)
-                    fullOrder.AmountFilled = result.AmountFilled;
-                if (result.AveragePrice != 0)
-                    fullOrder.AveragePrice = result.AveragePrice;
+                if (!token["side"].ToStringInvariant().EqualsWithOption(string.Empty))
+                    oldOrder.IsBuy = newOrder.IsBuy;
+                if (newOrder.Amount != 0)
+                    oldOrder.Amount = newOrder.Amount;
+                if (newOrder.Result != ExchangeAPIOrderResult.Error)
+                    oldOrder.Result = newOrder.Result;
+                if (newOrder.Price != 0)
+                    oldOrder.Price = newOrder.Price;
+                if (newOrder.OrderDate > oldOrder.OrderDate)
+                    oldOrder.OrderDate = newOrder.OrderDate;
+                if (newOrder.AmountFilled != 0)
+                    oldOrder.AmountFilled = newOrder.AmountFilled;
+                if (newOrder.AveragePrice != 0)
+                    oldOrder.AveragePrice = newOrder.AveragePrice;
             }
             else
             {
-                fullOrder = result;
+                oldOrder = newOrder;
             }
-            fullOrders[result.OrderId] = fullOrder;
-
-            return fullOrder;
+            fullOrders[newOrder.OrderId] = oldOrder;
+            var jsonStr = JsonConvert.SerializeObject(oldOrder);
+            return JsonConvert.DeserializeObject<ExchangeOrderResult>(jsonStr);
         }
 
-
-        //private decimal GetInstrumentTickSize(ExchangeMarket market)
-        //{
-        //    if (market.MarketName == "XBTUSD")
-        //    {
-        //        return 0.01m;
-        //    }
-        //    return market.PriceStepSize.Value;
-        //}
-
-        //private ExchangeMarket GetMarket(string symbol)
-        //{
-        //    var m = GetSymbolsMetadata();
-        //    return m.Where(x => x.MarketName == symbol).First();
-        //}
-
-        //private decimal GetPriceFromID(long id, ExchangeMarket market)
-        //{
-        //    return ((100000000L * market.Idx) - id) * GetInstrumentTickSize(market);
-        //}
-
-        //private long GetIDFromPrice(decimal price, ExchangeMarket market)
-        //{
-        //    return (long)((100000000L * market.Idx) - (price / GetInstrumentTickSize(market)));
-        //}
-    }
-
-    public partial class ExchangeName { public const string BitMEX = "BitMEX"; }
-    public partial class ExchangeFee
-    {
-        public const decimal BitMEX_EOS = -0.0005m;
-        public const decimal BitMEX_ETHM19 = -0.0005m;
+        public partial class ExchangeName { public const string BitMEX = "BitMEX"; }
+        public partial class ExchangeFee
+        {
+            public const decimal BitMEX_EOS = -0.0005m;
+            public const decimal BitMEX_ETHM19 = -0.0005m;
+        }
     }
 }
