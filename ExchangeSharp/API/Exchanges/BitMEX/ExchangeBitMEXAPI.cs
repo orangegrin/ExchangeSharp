@@ -897,17 +897,17 @@ namespace ExchangeSharp
             else
             {
                 oldOrder = newOrder;
+                fullOrders[newOrder.OrderId] = oldOrder;
             }
-            fullOrders[newOrder.OrderId] = oldOrder;
             var jsonStr = JsonConvert.SerializeObject(oldOrder);
             return JsonConvert.DeserializeObject<ExchangeOrderResult>(jsonStr);
         }
-
-        public partial class ExchangeName { public const string BitMEX = "BitMEX"; }
-        public partial class ExchangeFee
-        {
-            public const decimal BitMEX_EOS = -0.0005m;
-            public const decimal BitMEX_ETHM19 = -0.0005m;
-        }
+    }
+    public partial class ExchangeName { public const string BitMEX = "BitMEX"; }
+    public partial class ExchangeFee
+    {
+        public const decimal BitMEX_EOS = -0.0005m;
+        public const decimal BitMEX_ETHM19 = -0.0005m;
     }
 }
+

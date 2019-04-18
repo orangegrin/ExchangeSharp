@@ -109,15 +109,15 @@ namespace ExchangeSharp
         {
             try
             {
-				LogFactory factory = null;
-				if (File.Exists(ConfigurationManager.OpenExeConfiguration(ConfigurationUserLevel.None).FilePath))
-				{
-					factory = LogManager.LoadConfiguration(ConfigurationManager.OpenExeConfiguration(ConfigurationUserLevel.None).FilePath);
-				}
+                LogFactory factory = null;
+                if (File.Exists(ConfigurationManager.OpenExeConfiguration(ConfigurationUserLevel.None).FilePath))
+                {
+                    factory = LogManager.LoadConfiguration(ConfigurationManager.OpenExeConfiguration(ConfigurationUserLevel.None).FilePath);
+                }
 
-				if (factory == null || factory.Configuration.AllTargets.Count == 0)
-				{
-					if (File.Exists("nlog.config"))
+                if (factory == null || factory.Configuration.AllTargets.Count == 0)
+                {
+                    if (File.Exists("nlog.config"))
                     {
                         factory = LogManager.LoadConfiguration("nlog.config");
                     }
@@ -237,7 +237,7 @@ namespace ExchangeSharp
         public static void Debug(string text, params object[] args)
         {
             Write(ExchangeSharp.LogLevel.Debug, text, args);
-            Console.WriteLine(DateTime.Now+" " +text, args);
+            Console.WriteLine(string.Format(DateTime.Now + " " + text, args));
         }
 
         /// <summary>
