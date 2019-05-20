@@ -117,12 +117,14 @@ namespace ExchangeSharp
 
 				if (factory == null || factory.Configuration.AllTargets.Count == 0)
 				{
-					if (File.Exists("nlog.config"))
+                    
+					if (File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "nlog.config")))
                     {
-                        factory = LogManager.LoadConfiguration("nlog.config");
+                        factory = LogManager.LoadConfiguration(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "nlog.config"));
                     }
                     else
                     {
+                        Console.WriteLine("Failed to Find file nlog.congfig in :"+Directory.GetCurrentDirectory());
                         System.IO.StringReader sr = new System.IO.StringReader(ExchangeSharpResources.NLog_config);
                         System.Xml.XmlReader xr = System.Xml.XmlReader.Create(sr);
                         LogManager.Configuration = new XmlLoggingConfiguration(xr, Directory.GetCurrentDirectory());
@@ -194,6 +196,8 @@ namespace ExchangeSharp
         /// <param name="args">Format arguments</param>
         public static void Error(string text, params object[] args)
         {
+//             string log = string.Format(text, args);
+//             Console.WriteLine(DateTime.Now + " [ERROR] " + log);
             Write(ExchangeSharp.LogLevel.Error, text, args);
         }
 
