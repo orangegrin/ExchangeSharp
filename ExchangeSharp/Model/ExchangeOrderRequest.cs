@@ -104,6 +104,11 @@ namespace ExchangeSharp
         Market,
 
         /// <summary>
+        /// A MarketIfTouched order, if close price touched the price ,market by the price
+        /// </summary>
+        MarketIfTouched,
+
+        /// <summary>
         /// A stop order, you will sell if price reaches a low enough level down to a limit
         /// </summary>
         Stop

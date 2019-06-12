@@ -238,7 +238,7 @@ namespace ExchangeSharp
         public static void Debug(string text, params object[] args)
         {
             Write(ExchangeSharp.LogLevel.Debug, text, args);
-            Console.WriteLine(string.Format(DateTime.Now + " " + text, args));
+            //Console.WriteLine(string.Format(DateTime.Now + " " + text, args));
         }
 
         /// <summary>
@@ -255,6 +255,9 @@ namespace ExchangeSharp
                 {
                     text = string.Format(text, args);
                 }
+                if(!text.StartsWith("{") && !text.StartsWith("\""))//如果不是json格式那么双引号
+                    text = "\"" + text + "\"";
+
                 logger?.Log(GetNLogLevel(level), text);
             }
             catch
