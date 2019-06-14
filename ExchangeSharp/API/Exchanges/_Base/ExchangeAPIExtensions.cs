@@ -13,6 +13,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 using Newtonsoft.Json.Linq;
@@ -71,6 +72,12 @@ namespace ExchangeSharp
                         applyDelta(freshBook.Asks, fullOrderBook.Asks);
                         applyDelta(freshBook.Bids, fullOrderBook.Bids);
                         fullOrderBook.SequenceId = freshBook.SequenceId;
+                    }
+                    else
+                    {
+                        Logger.Debug("跳过 freshBook");
+                        var lines = freshBook.Asks.Select(kvp => kvp.Key + ": " + kvp.Value.ToString());
+                        Logger.Debug(string.Join(Environment.NewLine,lines));
                     }
                 }
             }

@@ -44,7 +44,7 @@ namespace ExchangeSharp
 
             MarketSymbolSeparator = string.Empty;
             RequestContentType = "application/json";
-            WebSocketOrderBookType = WebSocketOrderBookType.FullBookFirstThenDeltas;
+            WebSocketOrderBookType = WebSocketOrderBookType.FullBookAlways;
 
             RateLimit = new RateGate(300, TimeSpan.FromMinutes(5));
         }
@@ -480,52 +480,35 @@ namespace ExchangeSharp
                 }
 
                 var action = token["action"].ToStringInvariant();
-                JArray data = token["data"] as JArray;
+                JArray bids = token["data"][0]["bids"] as JArray;
+                JArray asks = token["data"][0]["asks"] as JArray;
 
                 ExchangeOrderBook book = new ExchangeOrderBook();
+                book.SequenceId = token["data"][0]["timestamp"].ConvertInvariant<DateTime>().Ticks;
                 var price = 0m;
                 var size = 0m;
-                foreach (var d in data)
+                var marketSymbol = token["data"][0]["symbol"].ToStringInvariant();
+                book.MarketSymbol = marketSymbol;
+                void applyData(JArray data,bool isBuy)
                 {
-                    var marketSymbol = d["symbol"].ToStringInvariant();
-                    var id = d["id"].ConvertInvariant<long>();
-                    if (d["price"] == null)
+                    foreach (var d in data)
                     {
-                        if (!dict_long_decimal.TryGetValue(id, out price))
+                        price = d[0].ConvertInvariant<decimal>();
+                        size = d[1].ConvertInvariant<decimal>();
+                        var depth = new ExchangeOrderPrice { Price = price, Amount = size };
+                        if (isBuy)
                         {
-                            continue;
+                            book.Bids[depth.Price] = depth;
                         }
-                    }
-                    else
-                    {
-                        price = d["price"].ConvertInvariant<decimal>();
-                        dict_long_decimal[id] = price;
-                        dict_decimal_long[price] = id;
-                    }
+                        else
+                        {
+                            book.Asks[depth.Price] = depth;
+                        }
 
-                    var side = d["side"].ToStringInvariant();
-
-                    if (d["size"] == null)
-                    {
-                        size = 0m;
                     }
-                    else
-                    {
-                        size = d["size"].ConvertInvariant<decimal>();
-                    }
-
-                    var depth = new ExchangeOrderPrice { Price = price, Amount = size };
-
-                    if (side.EqualsWithOption("Buy"))
-                    {
-                        book.Bids[depth.Price] = depth;
-                    }
-                    else
-                    {
-                        book.Asks[depth.Price] = depth;
-                    }
-                    book.MarketSymbol = marketSymbol;
                 }
+                applyData(bids, true);
+                applyData(asks, false);
 
                 if (!string.IsNullOrEmpty(book.MarketSymbol))
                 {
@@ -538,7 +521,7 @@ namespace ExchangeSharp
                 {
                     marketSymbols = (await GetMarketSymbolsAsync()).ToArray();
                 }
-                await _socket.SendMessageAsync(new { op = "subscribe", args = marketSymbols.Select(s => "orderBookL2:" + this.NormalizeMarketSymbol(s)).ToArray() });
+                await _socket.SendMessageAsync(new { op = "subscribe", args = marketSymbols.Select(s => "orderBook10:" + this.NormalizeMarketSymbol(s)).ToArray() });
             });
         }
         #endregion
