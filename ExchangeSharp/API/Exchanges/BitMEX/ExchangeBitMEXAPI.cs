@@ -754,6 +754,120 @@ namespace ExchangeSharp
             return results.ToArray();
         }
 
+        public override async Task<ExchangeMarginPositionResult> GetOpenPositionAsync(string marketSymbol)
+        {
+            /*
+             * [
+  {
+    "account": 981600,
+    "symbol": "XBTM19",
+    "currency": "XBt",
+    "underlying": "XBT",
+    "quoteCurrency": "USD",
+    "commission": 0.00075,
+    "initMarginReq": 0.01,
+    "maintMarginReq": 0.005,
+    "riskLimit": 5000000000,
+    "leverage": 100,
+    "crossMargin": true,
+    "deleveragePercentile": null,
+    "rebalancedPnl": 0,
+    "prevRealisedPnl": 0,
+    "prevUnrealisedPnl": 0,
+    "prevClosePrice": 12130.48,
+    "openingTimestamp": "2019-06-28T10:00:00.000Z",
+    "openingQty": 0,
+    "openingCost": 0,
+    "openingComm": 0,
+    "openOrderBuyQty": 0,
+    "openOrderBuyCost": 0,
+    "openOrderBuyPremium": 0,
+    "openOrderSellQty": 0,
+    "openOrderSellCost": 0,
+    "openOrderSellPremium": 0,
+    "execBuyQty": 21,
+    "execBuyCost": 178836,
+    "execSellQty": 0,
+    "execSellCost": 0,
+    "execQty": 21,
+    "execCost": -178836,
+    "execComm": 134,
+    "currentTimestamp": "2019-06-28T10:50:21.081Z",
+    "currentQty": 21,
+    "currentCost": -178836,
+    "currentComm": 134,
+    "realisedCost": 0,
+    "unrealisedCost": -178836,
+    "grossOpenCost": 0,
+    "grossOpenPremium": 0,
+    "grossExecCost": 178836,
+    "isOpen": true,
+    "markPrice": 11743.77,
+    "markValue": -178815,
+    "riskValue": 178815,
+    "homeNotional": 0.00178815,
+    "foreignNotional": -21,
+    "posState": "",
+    "posCost": -178836,
+    "posCost2": -178836,
+    "posCross": 0,
+    "posInit": 1789,
+    "posComm": 136,
+    "posLoss": 0,
+    "posMargin": 1925,
+    "posMaint": 1031,
+    "posAllowance": 0,
+    "taxableMargin": 0,
+    "initMargin": 0,
+    "maintMargin": 1946,
+    "sessionMargin": 0,
+    "targetExcessMargin": 0,
+    "varMargin": 0,
+    "realisedGrossPnl": 0,
+    "realisedTax": 0,
+    "realisedPnl": -134,
+    "unrealisedGrossPnl": 21,
+    "longBankrupt": 0,
+    "shortBankrupt": 0,
+    "taxBase": 0,
+    "indicativeTaxRate": null,
+    "indicativeTax": 0,
+    "unrealisedTax": 0,
+    "unrealisedPnl": 21,
+    "unrealisedPnlPcnt": 0.0001,
+    "unrealisedRoePcnt": 0.0117,
+    "simpleQty": null,
+    "simpleCost": null,
+    "simpleValue": null,
+    "simplePnl": null,
+    "simplePnlPcnt": null,
+    "avgCostPrice": 11742.5,
+    "avgEntryPrice": 11742.5,
+    "breakEvenPrice": 11752.5,
+    "marginCallPrice": 2086,
+    "liquidationPrice": 2086,
+    "bankruptPrice": 2084,
+    "timestamp": "2019-06-28T10:50:21.081Z",
+    "lastPrice": 11743.77,
+    "lastValue": -178815
+  }
+]*/
+            ExchangeMarginPositionResult poitionR = null;
+            var payload = await GetNoncePayloadAsync();
+            JToken token = await MakeJsonRequestAsync<JToken>($"/position", BaseUrl, payload);
+            foreach (JToken position in token)
+            {
+                if (position["symbol"].ToStringInvariant().Equals(marketSymbol))
+                {
+                    poitionR = new ExchangeMarginPositionResult()
+                    {
+                        MarketSymbol = marketSymbol,
+                        Amount = position["currentQty"].ConvertInvariant<decimal>()
+                    };
+                }
+            }
+            return poitionR;
+        }
         private void AddOrderToPayload(ExchangeOrderRequest order, Dictionary<string, object> payload)
         {
             payload["symbol"] = order.MarketSymbol;
