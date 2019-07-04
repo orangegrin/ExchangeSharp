@@ -139,6 +139,11 @@ namespace ExchangeSharp
         Task<Dictionary<string, decimal>> GetAmountsAsync();
 
         /// <summary>
+        /// Get WalletSummary, symbol 
+        /// </summary>
+        /// <returns>Wallet Summary</returns>
+        Task< decimal> GetWalletSummaryAsync(string symbol);
+        /// <summary>
         /// Get amounts available to trade, symbol / amount dictionary
         /// </summary>
         /// <returns>Dictionary of symbols and amounts available to trade</returns>

@@ -90,6 +90,7 @@ namespace ExchangeSharp
         protected virtual Task<IEnumerable<ExchangeTransaction>> OnGetDepositHistoryAsync(string currency) => throw new NotImplementedException();
         protected virtual Task<IEnumerable<MarketCandle>> OnGetCandlesAsync(string marketSymbol, int periodSeconds, DateTime? startDate = null, DateTime? endDate = null, int? limit = null) => throw new NotImplementedException();
         protected virtual Task<Dictionary<string, decimal>> OnGetAmountsAsync() => throw new NotImplementedException();
+        protected virtual Task<decimal> OnGetWalletSummaryAsync(string symbol) => throw new NotImplementedException();
         protected virtual Task<Dictionary<string, decimal>> OnGetFeesAsync() => throw new NotImplementedException();
         protected virtual Task<Dictionary<string, decimal>> OnGetAmountsAvailableToTradeAsync() => throw new NotImplementedException();
         protected virtual Task<ExchangeOrderResult> OnPlaceOrderAsync(ExchangeOrderRequest order) => throw new NotImplementedException();
@@ -677,7 +678,15 @@ namespace ExchangeSharp
         {
             return await Cache.CacheMethod(MethodCachePolicy, async () => (await OnGetAmountsAsync()), nameof(GetAmountsAsync));
         }
-
+        /// <summary>
+        /// Get wallet Summary
+        /// </summary>
+        /// <returns>Dictionary of symbols and amounts</returns>
+        public virtual async Task<decimal> GetWalletSummaryAsync(string symbol)
+        {
+            decimal amount = await OnGetWalletSummaryAsync(symbol);
+            return amount;
+        }
         /// <summary>
         /// Get fees
         /// </summary>
@@ -911,6 +920,8 @@ namespace ExchangeSharp
         {
             return amount;
         }
+
+        
 
         #endregion Web Socket API
     }

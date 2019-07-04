@@ -630,6 +630,22 @@ namespace ExchangeSharp
             }
             return amounts;
         }
+        public override async Task<decimal> GetWalletSummaryAsync(string symbol)
+        {
+            var payload = await GetNoncePayloadAsync();
+            JToken token = await MakeJsonRequestAsync<JToken>($"/user/walletSummary?currency={symbol}", BaseUrl, payload);
+            foreach (var item in token)
+            {
+                var transactType = item["transactType"].ToStringInvariant();
+                var count = item["amount"].ConvertInvariant<decimal>();
+
+                if (transactType.Equals("Total"))
+                {
+                    return count;
+                }
+            }
+            return 0;
+        }
 
         protected override async Task<Dictionary<string, decimal>> OnGetAmountsAvailableToTradeAsync()
         {
