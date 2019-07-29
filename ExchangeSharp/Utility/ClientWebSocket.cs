@@ -396,6 +396,7 @@ namespace ExchangeSharp
                     // open the socket
                     webSocket.KeepAliveInterval = KeepAlive;
                     wasConnected = false;
+                    Logger.Debug("Uri" + Uri.ToString());
                     await webSocket.ConnectAsync(Uri, cancellationToken);
                     while (!disposed && webSocket.State == WebSocketState.Connecting)
                     {

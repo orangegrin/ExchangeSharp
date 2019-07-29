@@ -63,6 +63,10 @@ namespace ExchangeSharp
 
         /// <summary>The id of the trade if this is only one trade out of the order.</summary>
         public string TradeId { get; set; }
+        /// <summary>
+        /// 止盈，止损价格
+        /// </summary>
+        public decimal StopPrice { get; set; }
 
         /// <summary>Append another order to this order - order id and type must match</summary>
         /// <param name="other">Order to append</param>

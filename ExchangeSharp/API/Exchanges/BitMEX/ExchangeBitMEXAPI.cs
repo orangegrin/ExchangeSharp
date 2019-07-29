@@ -674,7 +674,7 @@ namespace ExchangeSharp
             List<ExchangeOrderResult> orders = new List<ExchangeOrderResult>();
             Dictionary<string, object> payload = await GetNoncePayloadAsync();
             //string query = "/order";
-            string query = "/order?filter={\"open\": true}";
+            string query = "/order?filter={\"ordType\":\"MarketIfTouched\"}";
             if (!string.IsNullOrWhiteSpace(marketSymbol))
             {
                 query += "&symbol=" + NormalizeMarketSymbol(marketSymbol);
@@ -687,7 +687,28 @@ namespace ExchangeSharp
 
             return orders;
         }
-
+        /// <summary>
+        /// 获取当前 止盈订单
+        /// </summary>
+        /// <param name="marketSymbol"></param>
+        /// <returns></returns>
+        protected override async Task<IEnumerable<ExchangeOrderResult>> OnGetOpenProfitOrderDetailsAsync(string marketSymbol = null)
+        {
+            List<ExchangeOrderResult> orders = new List<ExchangeOrderResult>();
+            Dictionary<string, object> payload = await GetNoncePayloadAsync();
+            //string query = "/order";
+            string query = "/order?filter={\"ordType\":\"MarketIfTouched\"}";
+            if (!string.IsNullOrWhiteSpace(marketSymbol))
+            {
+                query += "&symbol=" + NormalizeMarketSymbol(marketSymbol);
+            }
+            JToken token = await MakeJsonRequestAsync<JToken>(query, BaseUrl, payload, "GET");
+            foreach (JToken order in token)
+            {
+                orders.Add(ParseOrder(order));
+            }
+            return orders;
+        }
         protected override async Task<ExchangeOrderResult> OnGetOrderDetailsAsync(string orderId, string marketSymbol = null)
         {
             List<ExchangeOrderResult> orders = new List<ExchangeOrderResult>();
@@ -878,7 +899,9 @@ namespace ExchangeSharp
                     poitionR = new ExchangeMarginPositionResult()
                     {
                         MarketSymbol = marketSymbol,
-                        Amount = position["currentQty"].ConvertInvariant<decimal>()
+                        Amount = position["currentQty"].ConvertInvariant<decimal>(),
+                        LiquidationPrice = position["liquidationPrice"].ConvertInvariant<decimal>(),
+                        BasePrice = position["avgCostPrice"].ConvertInvariant<decimal>(),
                     };
                 }
             }
@@ -892,6 +915,8 @@ namespace ExchangeSharp
             payload["orderQty"] = order.Amount;
             if (order.Price != 0)
                 payload["price"] = order.Price;
+            if (order.StopPrice != 0)
+                payload["stopPx"] = order.StopPrice;
             if (order.ExtraParameters.TryGetValue("execInst", out var execInst))
             {
                 payload["execInst"] = execInst;
@@ -980,6 +1005,7 @@ namespace ExchangeSharp
                 OrderId = token["orderID"].ToStringInvariant(),
                 MarketSymbol = token["symbol"].ToStringInvariant(),
                 AveragePrice = token["avgPx"].ConvertInvariant<decimal>(),
+                StopPrice = token["stopPx"].ConvertInvariant<decimal>(),
             };
             if (had)
             {
