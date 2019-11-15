@@ -22,7 +22,7 @@ namespace ExchangeSharp
 		private decimal basicUnit = 100;		/// <summary>
         /// 当前的仓位<MarketSymbol,ExchangeOrderResult>
         /// </summary>
-        private Dictionary<string, ExchangeOrderResult> currentPostionDic = null;
+        public Dictionary<string, ExchangeOrderResult> currentPostionDic = null;
         public ExchangeHBDMAPI()
         {
             
@@ -30,7 +30,7 @@ namespace ExchangeSharp
             RequestContentType = "application / json";
             NonceStyle = NonceStyle.UnixMilliseconds;
             MarketSymbolSeparator = "_";//string.Empty;
-            MarketSymbolIsUppercase = false;
+            MarketSymbolIsUppercase = true;
             WebSocketOrderBookType = WebSocketOrderBookType.FullBookAlways;
             currentPostionDic = new Dictionary<string, ExchangeOrderResult>();
         }
@@ -39,7 +39,20 @@ namespace ExchangeSharp
         /// </summary>
         /// <param name="marketSymbol"></param>
         /// <returns></returns>
-        private string[] GetSymbolAndContractCode(string marketSymbol)
+        private void GetSymbolAndContractCode(string marketSymbol,out string symbol, out string contractCode, out string contractType )
+        {
+            string[] strAry = new string[2];
+            string[] splitAry = marketSymbol.Split(MarketSymbolSeparator.ToCharArray(), StringSplitOptions.None);
+            symbol = splitAry[0];
+            contractCode = symbol+splitAry[1];
+            contractType= symbol +"_"+ splitAry[2];
+        }
+        /// <summary>
+        /// marketSymbol ws 2 web 
+        /// </summary>
+        /// <param name="marketSymbol"></param>
+        /// <returns></returns>
+        private string[] GetSymbolAndContractType(string marketSymbol)
         {
             string[] strAry = new string[2];
             string[] splitAry = marketSymbol.Split(MarketSymbolSeparator.ToCharArray(), StringSplitOptions.None);
@@ -160,9 +173,10 @@ namespace ExchangeSharp
                 }
                 foreach (string symbol in marketSymbols)
                 {
+                    GetSymbolAndContractCode(symbol,out string s, out string code, out string type);
                     long id = System.Threading.Interlocked.Increment(ref webSocketId);
                     //var normalizedSymbol = NormalizeMarketSymbol(symbol);
-                    string channel = $"market.{symbol}.depth.step11";
+                    string channel = $"market.{type}.depth.step11";
                     await _socket.SendMessageAsync(new { sub = channel, id = "id" + id.ToStringInvariant() });
                 }
             });
@@ -479,6 +493,7 @@ namespace ExchangeSharp
                 closeOrder.Amount = closeNum;
                 ExchangeOrderResult downReturnResult = await m_OnPlaceOrderAsync(closeOrder, false);
                 downReturnResult.Amount = amount * 100;
+                returnResult = downReturnResult;
                 //m_OnPlaceOrderAsync(closeOrder, false);
                 //TODO 如果失败了平仓(不需貌似await)
             }
@@ -489,20 +504,29 @@ namespace ExchangeSharp
                 order.Amount = openNum;
                 ExchangeOrderResult m_returnResult = await m_OnPlaceOrderAsync(closeOrder, true);
                 m_returnResult.Amount = amount * 100;
+                returnResult = m_returnResult;
             }
-            Logger.Error(returnResult.ToExcleString());
+            Logger.Debug("    OnPlaceOrderAsync 当前仓位："+returnResult.ToExcleString());
             return returnResult;
         }
 
         protected override async Task OnCancelOrderAsync(string orderId, string marketSymbol = null)
         {
+            GetSymbolAndContractCode(marketSymbol, out string symbol, out string contractCode, out string contractType);  //[0]symbol [1]contract_type
             Dictionary<string, object> payload = await GetNoncePayloadAsync();
-            payload["orderID"] = orderId;
-            JToken token = await MakeJsonRequestAsync<JToken>("/order", BaseUrl, payload, "DELETE");
+            payload["order_id"] = orderId;
+            payload["symbol"] = symbol;
+            JToken token = await MakeJsonRequestAsync<JToken>("/api/v1/contract_cancel", BaseUrl, payload, "POST");
         }
 
         private async Task<ExchangeOrderResult> m_OnPlaceOrderAsync(ExchangeOrderRequest order, bool isOpen)
         {
+
+            bool had = order.ExtraParameters.TryGetValue("orderID", out object orderId);
+            if (had)//如果有订单号，先删除再挂订单
+            {
+                await OnCancelOrderAsync(orderId.ToString(), order.MarketSymbol);
+            }
             Dictionary<string, object> payload = await GetNoncePayloadAsync();
             string addUrl = "/api/v1/contract_order";
             AddOrderToPayload(order, isOpen, payload);
@@ -522,8 +546,10 @@ namespace ExchangeSharp
             JObject jo;
             try
             {
+                Logger.Debug("m_OnPlaceOrderAsync:"+ order.ToString()+ "  isOpen:"+ isOpen);
                 token = await MakeJsonRequestAsync<JObject>(addUrl, BaseUrl, payload, "POST");
                 jo = JsonConvert.DeserializeObject<JObject>(token.Root.ToString());
+                Logger.Debug("m_OnPlaceOrderAsync:"+jo.ToString());
                 return ParseOrder(jo, order);
             }
             catch (System.Exception ex)
@@ -534,7 +560,259 @@ namespace ExchangeSharp
             }
             
         }
+        protected override async Task<ExchangeMarginPositionResult> OnGetOpenPositionAsync(string marketSymbol)
+        {
+            /*
+             * [
+  {
+      "status": "ok",
+      "data": [
+        {
+          "symbol": "BTC",
+          "contract_code": "BTC180914",
+          "contract_type": "this_week",
+          "volume": 1,
+          "available": 0,
+          "frozen": 0.3,
+          "cost_open": 422.78,
+          "cost_hold": 422.78,
+          "profit_unreal": 0.00007096,
+          "profit_rate": 0.07,
+          "profit": 0.97,
+          "position_margin": 3.4,
+          "lever_rate": 10,
+          "direction":"buy",
+          "last_price":7900.17
+         }
+        ],
+     "ts": 158797866555
+    }
+]*/
+            ExchangeMarginPositionResult poitionR = null;
+            var payload = await GetNoncePayloadAsync();
+            JToken token = await MakeJsonRequestAsync<JToken>($"/api/v1/contract_position_info", BaseUrl, payload,"POST");
+            foreach (JToken position in token)
+            {
+                GetSymbolAndContractCode(marketSymbol,out string symbol,out string contractCode, out string contractType);  //[0]symbol [1]contract_type
+                //if (position["symbol"].ToStringInvariant().Equals(m_symobl[0])&& position["contract_type"].ToStringInvariant().Equals(m_symobl[1]))
+                if (position["contract_code"].ToStringInvariant().Equals(contractCode))
+                {
+                    bool isBuy = position["direction"].ConvertInvariant<string>() == "buy";
+                    poitionR = new ExchangeMarginPositionResult()
+                    {
+                        MarketSymbol = marketSymbol,
+                        Amount = 100*(isBuy?position["volume"].ConvertInvariant<decimal>(): -position["volume"].ConvertInvariant<decimal>()),
+                        LiquidationPrice = position["liquidationPrice"].ConvertInvariant<decimal>(),
+                        BasePrice = position["cost_open"].ConvertInvariant<decimal>(),
+                    };
+                }
+            }
+            return poitionR;
+        }
+        public override async Task<ExchangeMarginPositionResult> GetOpenPositionAsync(string marketSymbol)
+        {
+            /*
+             *  {
+      "status": "ok",
+      "data": [
+        {
+          "symbol": "BTC",
+          "contract_code": "BTC180914",
+          "contract_type": "this_week",
+          "volume": 1,
+          "available": 0,
+          "frozen": 0.3,
+          "cost_open": 422.78,
+          "cost_hold": 422.78,
+          "profit_unreal": 0.00007096,
+          "profit_rate": 0.07,
+          "profit": 0.97,
+          "position_margin": 3.4,
+          "lever_rate": 10,
+          "direction":"buy",
+          "last_price":7900.17
+         }
+        ],
+     "ts": 158797866555
+    }
+             */
+            
+            ExchangeMarginPositionResult poitionR = null;
+            GetSymbolAndContractCode(marketSymbol, out string symbol, out string contractCode, out string contractType);  //[0]symbol [1]contract_type
+            
+            var payload = await GetNoncePayloadAsync();
+            JToken token = await MakeJsonRequestAsync<JToken>($"/api/v1/contract_position_info", BaseUrl, payload,"POST");
+            int count = 0;
+            foreach (JToken position in token)
+            {
+                
+                if (position["contract_code"].ToStringInvariant().Equals(contractCode))
+                {
+                    count++;
+                    bool isBuy = position["direction"].ConvertInvariant<string>()=="buy";
+                    decimal position_margin = position["position_margin"].ConvertInvariant<decimal>() ;
+                    decimal currentPrice = position["cost_hold"].ConvertInvariant<decimal>();
+                    Logger.Debug("GetOpenPositionAsync:" + position.ToString());
+                    poitionR = new ExchangeMarginPositionResult()
+                    {
+                        MarketSymbol = marketSymbol,
+                        Amount = 100*position["volume"].ConvertInvariant<decimal>()* (isBuy ?1:-1),
+                        LiquidationPrice = position["liquidationPrice"].ConvertInvariant<decimal>(),
+                        BasePrice = position["cost_open"].ConvertInvariant<decimal>(),
+                    };
+                    decimal openUse = poitionR.BasePrice /Math.Abs(poitionR.Amount);//单位btc
+                    if (isBuy)
+                        poitionR.LiquidationPrice =Math.Ceiling(1/((1/poitionR.BasePrice)+ (position_margin/ Math.Abs(poitionR.Amount))));
+                    else
+                        poitionR.LiquidationPrice =Math.Floor(1 / ((1 / poitionR.BasePrice) - (position_margin / Math.Abs(poitionR.Amount))));
+                    poitionR.LiquidationPrice = await GetLiquidationPriceAsync(symbol);
+                    Logger.Debug("Buy："+  Math.Ceiling(1 / ((1 / poitionR.BasePrice) + (position_margin / Math.Abs(poitionR.Amount))))+"  Sell:" + Math.Floor(1 / ((1 / poitionR.BasePrice) - (position_margin / Math.Abs(poitionR.Amount)))));
+                    Logger.Debug("GetOpenPositionAsync " + count + poitionR.ToString());
+                    if (count>=2)
+                    {
+                        Logger.Debug("双向开仓错误停止程序 ");
+                        Environment.Exit(0);
+                    }
+                }
+            }
+            return poitionR;
+        }
+        public override async Task<ExchangeOrderResult> GetOrderDetailsAsync(string orderId, string marketSymbol = null)
+        {
+            ExchangeOrderResult poitionR = null;
+            GetSymbolAndContractCode(marketSymbol, out string symbol, out string contractCode, out string contractType);  //[0]symbol [1]contract_type
+            var payload = await GetNoncePayloadAsync();
+            
+            payload["order_id"] = orderId;
+            payload["client_order_id"] = "";
+            payload["symbol"] = symbol;
+            JToken token = await MakeJsonRequestAsync<JToken>($"/api/v1/contract_order_info", BaseUrl, payload, "POST");
+            foreach (JToken position in token)
+            {
+                //if (position["symbol"].ToStringInvariant().Equals(m_symobl[0]) && position["contract_type"].ToStringInvariant().Equals(m_symobl[1]))
+                if (position["contract_code"].ToStringInvariant().Equals(contractCode))
+                {
+                    bool isBuy = position["direction"].ConvertInvariant<string>() == "buy";
+                    poitionR = new ExchangeOrderResult()
+                    {
+                        MarketSymbol = marketSymbol,
+                        Amount = 100 * position["volume"].ConvertInvariant<decimal>() ,
+                        AmountFilled = 100 * position["trade_volume"].ConvertInvariant<decimal>(),
+                        IsBuy = isBuy,
+                        Price = position["price"].ConvertInvariant<decimal>(),
+                        AveragePrice = position["trade_avg_price"].ConvertInvariant<decimal>(),
+                    };
+                }
+            }
+            return poitionR;
+        }
+        private async Task< decimal> GetLiquidationPriceAsync(string inSymbol)
+        {
+            var payload = await GetNoncePayloadAsync();
+            JToken token = await MakeJsonRequestAsync<JToken>($"/api/v1/contract_account_info", BaseUrl, payload, "POST");
+            foreach (JToken position in token)
+            {
+                string symbol = position["symbol"].ConvertInvariant<string>();
 
+                decimal margin_balance = position["margin_balance"].ConvertInvariant<decimal>();
+                decimal liquidation_price = position["liquidation_price"].ConvertInvariant<decimal>();
+                Logger.Debug(position.ToString());
+                if (symbol.Equals(inSymbol))
+                {
+                    return liquidation_price;
+                }
+            }
+            return 0;
+        }
+        protected override async Task<IEnumerable<ExchangeOrderResult>> OnGetOpenOrderDetailsAsync(string marketSymbol = null)
+        {
+            List< ExchangeOrderResult> poitionRList =  new List<ExchangeOrderResult>();
+            GetSymbolAndContractCode(marketSymbol, out string symbol, out string contractCode, out string contractType);  //[0]symbol [1]contract_type
+            var payload = await GetNoncePayloadAsync();
+
+            payload["symbol"] = symbol;
+
+
+            JToken token = await MakeJsonRequestAsync<JToken>($"/api/v1/contract_openorders", BaseUrl, payload, "POST");
+            foreach (JToken position in token["orders"])
+            {
+                //if (position["symbol"].ToStringInvariant().Equals(m_symobl[0]) && position["contract_type"].ToStringInvariant().Equals(m_symobl[1]))
+                if (position["contract_code"].ToStringInvariant().Equals(contractCode))
+                {
+                    bool isBuy = position["direction"].ConvertInvariant<string>() == "buy";
+                    ExchangeOrderResult poitionR = new ExchangeOrderResult()
+                    {
+                        MarketSymbol = marketSymbol,
+                        Amount = 100 * position["volume"].ConvertInvariant<decimal>(),
+                        AmountFilled = 100 * position["trade_volume"].ConvertInvariant<decimal>(),
+                        IsBuy = isBuy,
+                        Price = position["price"].ConvertInvariant<decimal>(),
+                        AveragePrice = position["trade_avg_price"].ConvertInvariant<decimal>(),
+                        Result = GetOderType(position["order_type"].ConvertInvariant<int>()),  //订单类型，1:报单 、 2:撤单 、 3:强平、4:交割
+                        OrderId = position["order_id_str"].ConvertInvariant<string>(),
+                    };
+                    poitionRList.Add(poitionR);
+                }
+            }
+            return poitionRList;
+        }
+        //订单类型，1:报单 、 2:撤单 、 3:强平、4:交割
+        private ExchangeAPIOrderResult GetOderType(int type)
+        {
+            if (type == 1)
+            {
+                return ExchangeAPIOrderResult.Pending;
+            }
+            else if (type == 2)
+            {
+                return ExchangeAPIOrderResult.Canceled;
+            }
+            else if (type == 3)
+            {
+                return ExchangeAPIOrderResult.Filled;
+            }
+            else if (type == 4)
+            {
+                return ExchangeAPIOrderResult.Filled;
+            }
+            return ExchangeAPIOrderResult.Unknown;
+        }
+        public override async Task GetHistoricalTradesAsync(Func<IEnumerable<ExchangeTrade>, bool> callback, string marketSymbol, DateTime? startDate = null, DateTime? endDate = null)
+        {
+            GetSymbolAndContractCode(marketSymbol, out string symbol, out string contractCode, out string contractType);  //[0]symbol [1]contract_type
+            var payload = await GetNoncePayloadAsync();
+            payload["symbol"] = symbol;
+            payload["trade_type"] = 0; //order.OrderType.ToStringInvariant();
+            payload["create_date"] = 7;
+            payload["contract_code	"] = contractCode;
+
+            JToken token = await MakeJsonRequestAsync<JToken>($"/api/v1/contract_matchresults", BaseUrl, payload, "POST");
+            Logger.Debug(token.ToString());
+        }
+        public override async Task<decimal> GetWalletSummaryAsync(string marketSymbol)
+        {
+            string symbol = "";
+            if (!string.IsNullOrEmpty(marketSymbol))
+            {
+                GetSymbolAndContractCode(marketSymbol, out string s, out string contractCode, out string contractType);  //[0]symbol [1]contract_type
+               
+                symbol = s;
+            }
+           
+            var payload = await GetNoncePayloadAsync();
+            JToken token = await MakeJsonRequestAsync<JToken>($"/api/v1/contract_account_inf", BaseUrl, payload, "POST ");
+            foreach (var item in token)
+            {
+                var transactType = item["transactType"].ToStringInvariant();
+                var count = item["amount"].ConvertInvariant<decimal>();
+
+                if (transactType.Equals("Total"))
+                {
+                    return count;
+                }
+            }
+            return 0;
+        }
         private async Task<Dictionary<string, string>> OnGetAccountsAsync()
         {
             /*
@@ -623,55 +901,49 @@ namespace ExchangeSharp
         /// <param name="payload"></param>
         private void AddOrderToPayload(ExchangeOrderRequest order,bool isOpen,Dictionary<string, object> payload)
         {
-            string[] strAry = GetSymbolAndContractCode(order.MarketSymbol);
-            payload["symbol"] = strAry[0];
-            payload["contract_type"] = strAry[1]; //order.OrderType.ToStringInvariant();
-            //payload["contract_code"] = order.OrderType.ToStringInvariant();
+            GetSymbolAndContractCode(order.MarketSymbol, out string symbol, out string contractCode, out string contractType);  //[0]symbol [1]contract_type
+            //payload["symbol"] = symbol;
+            //payload["contract_type"] = strAry[1]; //order.OrderType.ToStringInvariant();
+            payload["contract_code"] = contractCode;
+
             payload["client_order_id"] = "";
-            payload["price"] = order.Price;
-            payload["volume"] = order.Amount;
+            //if (order.Price!=0)
+            {
+                payload["price"] = order.Price;
+            }
+            payload["volume"] = (int)order.Amount;
             payload["direction"] = order.IsBuy ? "buy" : "sell"; ;
             payload["offset"] = isOpen? "open": "close";
-            payload["lever_rate"] = 20;
-            payload["order_price_type"] = order.OrderType == OrderType.Limit? "limit": "opponent";
-            if (order.ExtraParameters.TryGetValue("execInst", out var execInst))
+            payload["lever_rate"] = 5;
+            payload["order_price_type"] = order.OrderType == OrderType.Limit? "limit": "optimal_20";
+            foreach (var item in payload)
             {
-                payload["execInst"] = execInst;
+                Logger.Debug(item.Key + ":" + item.Value);
             }
         }
         private ExchangeOrderResult ParseOrder(JObject token,ExchangeOrderRequest orderRequest)
         {
             /*
-{[
-  {
-status	true	string	请求处理结果	"ok" , "error"
-<list>(属性名称: errors)				
-index	true	int	订单索引	
-err_code	true	int	错误码	
-err_msg	true	string	错误信息	
-</list>				
-<list>(属性名称: success)				
-index	true	int	订单索引	
-order_id	true	long	订单ID	
-client_order_id	true	long	用户下单时填写的客户端订单ID，没填则不返回	
-</list>				
-ts
-  }
-]}
+{
+  "status": "ok",
+  "data": {
+    "order_id": 637039332274479104,
+    "order_id_str": "637039332274479104"
+  },
+  "ts": 1571923612438
+}" }
             */
             ExchangeOrderResult result = new ExchangeOrderResult();
             if (token["status"].ToString().Equals("ok"))
             {
-                result = new ExchangeOrderResult
-                {
-                    Amount = orderRequest.Amount,
-                    AmountFilled = 0,
-                    Price = orderRequest.Price,
-                    IsBuy = orderRequest.IsBuy,
-                    OrderDate = new DateTime( token["ts"].ConvertInvariant<long>()),
-                    OrderId = token["data"]["order_id"].ToStringInvariant(),//token.Data["order_id"].ToStringInvariant(),
-                    MarketSymbol = orderRequest.MarketSymbol,
-                };
+                result = new ExchangeOrderResult();
+                result.Amount = orderRequest.Amount;
+                result.AmountFilled = 0;
+                result.Price = orderRequest.Price;
+                result.IsBuy = orderRequest.IsBuy;
+                result.OrderDate = new DateTime(token["ts"].ConvertInvariant<long>());
+                result.OrderId = token["data"]["order_id"].ToStringInvariant();//token.Data["order_id"].ToStringInvariant(),
+                result.MarketSymbol = orderRequest.MarketSymbol;
                 result.Result = ExchangeAPIOrderResult.Pending;
             }
             else

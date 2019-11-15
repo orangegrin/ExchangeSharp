@@ -26,7 +26,7 @@ namespace ExchangeSharp
         public override string BaseUrl { get; set; } = "data.gateio.io/api2/1";
         public string QueryBaseUrl { get; set; } = "data.gateio.io/api2/1";
         public string TradeBaseUrl { get; set; } = "api.gateio.io/api2/1"; 
-        public override string BaseUrlWebSocket { get; set; } = "wss://ws.gate.io/v3";
+        public override string BaseUrlWebSocket { get; set; } = "wss://ws.gateio.ws/v3";
         //public override string BaseUrlWebSocket { get; set; } = "wss://ws.gateio.ws/v3";
 
         public bool IsMargin { get; set; }
@@ -40,7 +40,7 @@ namespace ExchangeSharp
             NonceStyle = NonceStyle.UnixMilliseconds;
             MarketSymbolSeparator = "_";
             MarketSymbolIsUppercase = true;
-            WebSocketOrderBookType = WebSocketOrderBookType.FullBookAlways;
+            WebSocketOrderBookType = WebSocketOrderBookType.FullBookFirstThenDeltas;
         }
 
         public override string ExchangeMarketSymbolToGlobalMarketSymbol(string marketSymbol)
@@ -294,7 +294,7 @@ namespace ExchangeSharp
                      }
                  */
                 var str = msg.ToStringFromUTF8();
-                Console.Write(str);
+                Logger.Debug(str);
                 JToken token = JToken.Parse(str);
                 if (token["params"] == null)
                 {
@@ -330,7 +330,7 @@ namespace ExchangeSharp
                     Console.WriteLine("M:"+normalizedSymbol);
                     //'{"id":12312, "method":"depth.query", "params":["EOS_USTD", 5, "0.0001"]}'
                     string channel = "depth.subscribe";
-                    object[] a = { normalizedSymbol, 5, "0.0001" };
+                    object[] a = { normalizedSymbol, 5, "0.01" };
                     object[] b = { a };
                     Dictionary<string, object> payload = new Dictionary<string, object>
                     {
@@ -339,6 +339,7 @@ namespace ExchangeSharp
                         { "params",  b }
                     };
                     string orderbook_sub_str = CryptoUtility.GetJsonForPayload(payload);
+                    Logger.Debug(orderbook_sub_str);
                     await _socket.SendMessageAsync(orderbook_sub_str);
                     //await _socket.SendMessageAsync(new { id = 12321, method = "depth.subscribe", @params = b});
                  }

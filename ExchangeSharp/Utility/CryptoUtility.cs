@@ -786,7 +786,18 @@ namespace ExchangeSharp
                 destinationDictionary[kv.Key] = kv.Value;
             }
         }
-
+        /// <summary>
+        /// Sign a message with SHA256 hash
+        /// </summary>
+        /// <param name="message">Message to sign</param>
+        /// <returns>Signature in hex</returns>
+        public static string SHA256Sign(string message)
+        {
+            var hmac = new HMACSHA256();
+            var messagebyte = message.ToBytesUTF8();
+            var hashmessage = hmac.ComputeHash(messagebyte);
+            return BitConverter.ToString(hashmessage).Replace("-", "");
+        }
         /// <summary>
         /// Sign a message with SHA256 hash
         /// </summary>
@@ -824,7 +835,16 @@ namespace ExchangeSharp
         {
             return Convert.ToBase64String(new HMACSHA256(key).ComputeHash(message.ToBytesUTF8()));
         }
-
+        /// <summary>
+        /// Sign a message with SHA256 hash
+        /// </summary>
+        /// <param name="message">Message to sign</param>
+        /// <param name="key">Private key bytes</param>
+        /// <returns>Signature in base64</returns>
+        public static string SHA256SignBase64(string message)
+        {
+            return Convert.ToBase64String(new HMACSHA256().ComputeHash(message.ToBytesUTF8()));
+        }
         /// <summary>
         /// Sign a message with SHA384 hash
         /// </summary>

@@ -182,7 +182,7 @@ namespace ExchangeSharp
         /// </summary>
         /// <param name="marketSymbol">Market symbol to get open orders for or null for all</param>
         /// <returns>All open order details for the specified symbol</returns>
-        Task<IEnumerable<ExchangeOrderResult>> GetOpenProfitOrderDetailsAsync(string marketSymbol = null);
+        Task<IEnumerable<ExchangeOrderResult>> GetOpenProfitOrderDetailsAsync(string marketSymbol = null, OrderType orderType = OrderType.MarketIfTouched);
         /// <summary>
         /// Get the details of all completed orders
         /// </summary>

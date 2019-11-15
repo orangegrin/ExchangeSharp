@@ -92,6 +92,8 @@ namespace ExchangeSharp
         /// </summary>
         public SortedDictionary<decimal, ExchangeOrderPrice> Bids { get; } = new SortedDictionary<decimal, ExchangeOrderPrice>(new DescendingComparer<decimal>());
 
+
+        public bool IsFull = false;
         /// <summary>
         /// ToString
         /// </summary>

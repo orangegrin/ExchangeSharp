@@ -56,5 +56,10 @@ namespace ExchangeSharp
         /// Liquidation price
         /// </summary>
         public decimal LiquidationPrice { get; set; }
+
+        public override string ToString()
+        {
+            return "MarketSymbol:"+ MarketSymbol+ "Amount:" + Amount + "BasePrice:" + BasePrice + "LiquidationPrice:" + LiquidationPrice ;
+        }
     }
 }

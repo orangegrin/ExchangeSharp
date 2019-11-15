@@ -75,6 +75,11 @@ namespace ExchangeSharp
         /// <summary>
         /// Web socket order book sends the full book always
         /// </summary>
-        FullBookAlways
+        FullBookAlways,
+
+        /// <summary>
+        /// Web socket order book sends the full book sometimes
+        /// </summary>
+        FullBookSometimes,
     }
 }

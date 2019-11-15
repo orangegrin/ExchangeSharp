@@ -17,7 +17,7 @@ namespace ExchangeSharp
         public override string BaseUrl { get; set; } = "https://fx-api-testnet.gateio.ws";
         public string BaseUrlV1 { get; set; } = "https://fx-api-testnet.gateio.ws/api/v4";
 
-        public override string BaseUrlWebSocket { get; set; } = "wss://www.GateioDM.com/ws";
+        public override string BaseUrlWebSocket { get; set; } = "wss://fx-ws.gateio.ws/v4/ws";
         public string PrivateUrlV1 { get; set; } = "https://api.GateioDM.com/api/v1";
 
 
@@ -36,7 +36,7 @@ namespace ExchangeSharp
             NonceStyle = NonceStyle.UnixMilliseconds;
             MarketSymbolSeparator = "_";//string.Empty;
             MarketSymbolIsUppercase = false;
-            WebSocketOrderBookType = WebSocketOrderBookType.FullBookAlways;
+            WebSocketOrderBookType = WebSocketOrderBookType.FullBookSometimes;
             currentPostionDic = new Dictionary<string, ExchangeOrderResult>();
         }
         public override string ExchangeMarketSymbolToGlobalMarketSymbol(string marketSymbol)
@@ -65,7 +65,7 @@ namespace ExchangeSharp
         #region Websocket API
         protected override IWebSocket OnGetOrderBookWebSocket(Action<ExchangeOrderBook> callback, int maxCount = 20, params string[] marketSymbols)
         {
-            return ConnectWebSocket(string.Empty, async (_socket, msg) =>
+            IWebSocket web= ConnectWebSocket(string.Empty, async (_socket, msg) =>
             {
                 /*
                     {{
@@ -107,9 +107,9 @@ namespace ExchangeSharp
                       }
                     }}
                  */
-                var str = msg.ToStringFromUTF8Gzip();
+                var str = msg.ToStringFromUTF8();
                 JToken token = JToken.Parse(str);
-
+                //Logger.Debug(token.ToString());
                 if (token["status"] != null)
                 {
                     return;
@@ -119,11 +119,69 @@ namespace ExchangeSharp
                     await _socket.SendMessageAsync(str.Replace("ping", "pong"));
                     return;
                 }
-                var ch = token["ch"].ToStringInvariant();
-                var sArray = ch.Split('.');
-                var marketSymbol = sArray[1].ToStringInvariant();
-                ExchangeOrderBook book = ExchangeAPIExtensions.ParseOrderBookFromJTokenArrays(token["tick"], maxCount: maxCount, basicUnit: basicUnit);
-                book.MarketSymbol = marketSymbol;
+                var _event = token["event"].ToString();
+                ExchangeOrderBook book = new ExchangeOrderBook();
+                var price = 0m;
+                var size = 0m;
+
+                var result = token["result"];
+                if (_event.Equals("all"))
+                {
+                    
+                    var marketSymbol = result["contract"].ToStringInvariant();
+
+                    JArray bids = result["bids"] as JArray;
+                    JArray asks = result["asks"] as JArray;
+
+                    
+                    book.SequenceId = token["time"].ConvertInvariant<long>();
+                    book.MarketSymbol = marketSymbol;
+                    void applyData(JArray data, bool isBuy)
+                    {
+                        foreach (var d in data)
+                        {
+                            price = d["p"].ConvertInvariant<decimal>();
+                            size = d["s"].ConvertInvariant<decimal>();
+                            var depth = new ExchangeOrderPrice { Price = price, Amount = size };
+                            if (isBuy)
+                            {
+                                book.Bids[depth.Price] = depth;
+                            }
+                            else
+                            {
+                                book.Asks[depth.Price] = depth;
+                            }
+                        }
+                    }
+                    applyData(bids, true);
+                    applyData(asks, false);
+                    book.IsFull = true;
+                }
+                else
+                {
+                    string marketSymbol = "";
+                    long SequenceId = 0;
+                    book.SequenceId = token["time"].ConvertInvariant<long>();
+
+                    foreach (var d in result)
+                    {
+                        price = d["p"].ConvertInvariant<decimal>();
+                        size = d["s"].ConvertInvariant<decimal>();
+                        var depth = new ExchangeOrderPrice { Price = price, Amount = Math.Abs(size) };
+
+                        if (size > 0)
+                        {
+                            book.Bids[depth.Price] = depth;
+                        }
+                        else
+                        {
+                            book.Asks[depth.Price] = depth;
+                        }
+                        marketSymbol = d["c"].ConvertInvariant<string>();
+                    }
+                    book.MarketSymbol = marketSymbol;
+                    book.IsFull = false;
+                }
                 callback(book);
             }, async (_socket) =>
             {
@@ -135,10 +193,15 @@ namespace ExchangeSharp
                 {
                     long id = System.Threading.Interlocked.Increment(ref webSocketId);
                     //var normalizedSymbol = NormalizeMarketSymbol(symbol);
-                    string channel = $"market.{symbol}.depth.step11";
-                    await _socket.SendMessageAsync(new { sub = channel, id = "id" + id.ToStringInvariant() });
+                    
+                    string channel = $"futures.order_book";
+                    //object o = new { time = id.ToStringInvariant(), channel = channel, @event = "subscribe", payload = "[\"" + symbol + @""", ""20"", ""0""]" };
+                    string s = @"{""time"" : 123456, ""channel"" : ""futures.order_book"", ""event"": ""subscribe"", ""payload"" : ["""+ symbol + @""", ""5"", ""0""]}";
+                    //Logger.Debug(s.ToString());
+                    await _socket.SendMessageAsync(s);
                 }
             });
+            return web;
         }
         #endregion
 

@@ -85,6 +85,10 @@ namespace ExchangeSharp
         {
             return $"{"MarketSymbol:"}{MarketSymbol}{IsBuy}{"Amount:"}{Amount}{"at Price:"}{Price}{"ExtraParameters:"}{ExtraParameters.ToString()}";
         }
+        public string ToStopString()
+        {
+            return $"{"MarketSymbol:"}{MarketSymbol}{IsBuy}{"Amount:"}{Amount}{"at StopPrice:"}{StopPrice}{"ExtraParameters:"}{ExtraParameters.ToString()}";
+        }
     }
 
     /// <summary>

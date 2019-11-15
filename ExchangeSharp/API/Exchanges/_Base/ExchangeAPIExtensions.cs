@@ -76,8 +76,8 @@ namespace ExchangeSharp
                     else
                     {
                         Logger.Debug("跳过 freshBook");
-                        var lines = freshBook.Asks.Select(kvp => kvp.Key + ": " + kvp.Value.ToString());
-                        Logger.Debug(string.Join(Environment.NewLine,lines));
+//                         var lines = freshBook.Asks.Select(kvp => kvp.Key + ": " + kvp.Value.ToString());
+//                         Logger.Debug(string.Join(Environment.NewLine,lines));
                     }
                 }
             }
@@ -154,6 +154,20 @@ namespace ExchangeSharp
                             // First response from exchange will be the full order book.
                             // Subsequent updates will be deltas, at least some exchanges have their heads on straight
                             if (!foundFullBook)
+                            {
+                                fullBooks[newOrderBook.MarketSymbol] = fullOrderBook = newOrderBook;
+                            }
+                            else
+                            {
+                                updateOrderBook(fullOrderBook, newOrderBook);
+                            }
+                        }
+                        break;
+                    case WebSocketOrderBookType.FullBookSometimes:
+                        {
+                            // First response from exchange will be the full order book.
+                            // Subsequent updates will be deltas, at least some exchanges have their heads on straight
+                            if (!foundFullBook || newOrderBook.IsFull)
                             {
                                 fullBooks[newOrderBook.MarketSymbol] = fullOrderBook = newOrderBook;
                             }

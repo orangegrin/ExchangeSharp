@@ -97,7 +97,7 @@ namespace ExchangeSharp
         protected virtual Task<ExchangeOrderResult[]> OnPlaceOrdersAsync(params ExchangeOrderRequest[] order) => throw new NotImplementedException();
         protected virtual Task<ExchangeOrderResult> OnGetOrderDetailsAsync(string orderId, string marketSymbol = null) => throw new NotImplementedException();
         protected virtual Task<IEnumerable<ExchangeOrderResult>> OnGetOpenOrderDetailsAsync(string marketSymbol = null) => throw new NotImplementedException();
-        protected virtual Task<IEnumerable<ExchangeOrderResult>> OnGetOpenProfitOrderDetailsAsync(string marketSymbol = null) => throw new NotImplementedException();
+        protected virtual Task<IEnumerable<ExchangeOrderResult>> OnGetOpenProfitOrderDetailsAsync(string marketSymbol = null, OrderType orderType = OrderType.MarketIfTouched) => throw new NotImplementedException();
         protected virtual Task<IEnumerable<ExchangeOrderResult>> OnGetCompletedOrderDetailsAsync(string marketSymbol = null, DateTime? afterDate = null) => throw new NotImplementedException();
         protected virtual Task OnCancelOrderAsync(string orderId, string marketSymbol = null) => throw new NotImplementedException();
         protected virtual Task<ExchangeWithdrawalResponse> OnWithdrawAsync(ExchangeWithdrawalRequest withdrawalRequest) => throw new NotImplementedException();
@@ -764,10 +764,10 @@ namespace ExchangeSharp
         /// </summary>
         /// <param name="marketSymbol">Symbol to get open orders for or null for all</param>
         /// <returns>All open order details</returns>
-        public virtual async Task<IEnumerable<ExchangeOrderResult>> GetOpenProfitOrderDetailsAsync(string marketSymbol = null)
+        public virtual async Task<IEnumerable<ExchangeOrderResult>> GetOpenProfitOrderDetailsAsync(string marketSymbol = null, OrderType orderType = OrderType.MarketIfTouched)
         {
             marketSymbol = NormalizeMarketSymbol(marketSymbol);
-            return await Cache.CacheMethod(MethodCachePolicy, async () => await OnGetOpenProfitOrderDetailsAsync(marketSymbol), nameof(GetOpenProfitOrderDetailsAsync), nameof(marketSymbol), marketSymbol);
+            return await Cache.CacheMethod(MethodCachePolicy, async () => await OnGetOpenProfitOrderDetailsAsync(marketSymbol,orderType), nameof(GetOpenProfitOrderDetailsAsync), nameof(marketSymbol), marketSymbol);
         }
 
         /// <summary>

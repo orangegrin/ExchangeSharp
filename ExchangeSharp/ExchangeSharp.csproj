@@ -44,7 +44,6 @@
     <Compile Remove="API\Exchanges\Bleutrade\**" />
     <Compile Remove="API\Exchanges\Coinbase\**" />
     <Compile Remove="API\Exchanges\Cryptopia\**" />
-    <Compile Remove="API\Exchanges\Gateio\**" />
     <Compile Remove="API\Exchanges\Gemini\**" />
     <Compile Remove="API\Exchanges\Hitbtc\**" />
     <Compile Remove="API\Exchanges\Kraken\**" />
@@ -63,7 +62,6 @@
     <EmbeddedResource Remove="API\Exchanges\Bleutrade\**" />
     <EmbeddedResource Remove="API\Exchanges\Coinbase\**" />
     <EmbeddedResource Remove="API\Exchanges\Cryptopia\**" />
-    <EmbeddedResource Remove="API\Exchanges\Gateio\**" />
     <EmbeddedResource Remove="API\Exchanges\Gemini\**" />
     <EmbeddedResource Remove="API\Exchanges\Hitbtc\**" />
     <EmbeddedResource Remove="API\Exchanges\Kraken\**" />
@@ -82,7 +80,6 @@
     <None Remove="API\Exchanges\Bleutrade\**" />
     <None Remove="API\Exchanges\Coinbase\**" />
     <None Remove="API\Exchanges\Cryptopia\**" />
-    <None Remove="API\Exchanges\Gateio\**" />
     <None Remove="API\Exchanges\Gemini\**" />
     <None Remove="API\Exchanges\Hitbtc\**" />
     <None Remove="API\Exchanges\Kraken\**" />
@@ -111,6 +108,7 @@
     <PackageReference Include="Microsoft.AspNet.SignalR.Client" Version="2.3.0" />
     <PackageReference Include="Newtonsoft.Json" Version="11.0.2" />
     <PackageReference Include="NLog" Version="4.5.10" />
+    <PackageReference Include="StackExchange.Redis" Version="2.0.600" />
     <PackageReference Include="System.Configuration.ConfigurationManager" Version="4.5.0" />
   </ItemGroup>
 

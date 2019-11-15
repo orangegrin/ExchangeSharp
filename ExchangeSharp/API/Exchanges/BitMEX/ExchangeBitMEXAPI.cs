@@ -27,8 +27,8 @@ namespace ExchangeSharp
     {
         public override string BaseUrl { get; set; } = "https://www.bitmex.com/api/v1";
         public override string BaseUrlWebSocket { get; set; } = "wss://www.bitmex.com/realtime";
-        //public override string BaseUrl { get; set; } = "https://testnet.bitmex.com/api/v1";
-        //public override string BaseUrlWebSocket { get; set; } = "wss://testnet.bitmex.com/realtime";
+//         public override string BaseUrl { get; set; } = "https://testnet.bitmex.com/api/v1";
+//         public override string BaseUrlWebSocket { get; set; } = "wss://testnet.bitmex.com/realtime";
 
         private SortedDictionary<long, decimal> dict_long_decimal = new SortedDictionary<long, decimal>();
         private SortedDictionary<decimal, long> dict_decimal_long = new SortedDictionary<decimal, long>();
@@ -692,12 +692,12 @@ namespace ExchangeSharp
         /// </summary>
         /// <param name="marketSymbol"></param>
         /// <returns></returns>
-        protected override async Task<IEnumerable<ExchangeOrderResult>> OnGetOpenProfitOrderDetailsAsync(string marketSymbol = null)
+        protected override async Task<IEnumerable<ExchangeOrderResult>> OnGetOpenProfitOrderDetailsAsync(string marketSymbol = null,OrderType orderType = OrderType.MarketIfTouched)
         {
             List<ExchangeOrderResult> orders = new List<ExchangeOrderResult>();
             Dictionary<string, object> payload = await GetNoncePayloadAsync();
             //string query = "/order";
-            string query = "/order?filter={\"ordType\":\"MarketIfTouched\"}";
+            string query = "/order?filter={\"ordType\":\""+ orderType.ToString() + "\"}";
             if (!string.IsNullOrWhiteSpace(marketSymbol))
             {
                 query += "&symbol=" + NormalizeMarketSymbol(marketSymbol);
@@ -992,117 +992,122 @@ namespace ExchangeSharp
 
             // 
             ExchangeOrderResult fullOrder;
-            bool had = fullOrders.TryGetValue(token["orderID"].ToStringInvariant(), out fullOrder);
+            lock(fullOrders)
+            { 
+                bool had = fullOrders.TryGetValue(token["orderID"].ToStringInvariant(), out fullOrder);
 
 
-            ExchangeOrderResult result = new ExchangeOrderResult
-            {
-                Amount = token["orderQty"].ConvertInvariant<decimal>(),
-                AmountFilled = token["cumQty"].ConvertInvariant<decimal>(),
-                Price = token["price"].ConvertInvariant<decimal>(),
-                IsBuy = token["side"].ToStringInvariant().EqualsWithOption("Buy"),
-                OrderDate = token["transactTime"].ConvertInvariant<DateTime>(),
-                OrderId = token["orderID"].ToStringInvariant(),
-                MarketSymbol = token["symbol"].ToStringInvariant(),
-                AveragePrice = token["avgPx"].ConvertInvariant<decimal>(),
-                StopPrice = token["stopPx"].ConvertInvariant<decimal>(),
-            };
-            if (had)
-            {
-                result.IsBuy = fullOrder.IsBuy;
+                ExchangeOrderResult result = new ExchangeOrderResult
+                {
+                    Amount = token["orderQty"].ConvertInvariant<decimal>(),
+                    AmountFilled = token["cumQty"].ConvertInvariant<decimal>(),
+                    Price = token["price"].ConvertInvariant<decimal>(),
+                    IsBuy = token["side"].ToStringInvariant().EqualsWithOption("Buy"),
+                    OrderDate = token["transactTime"].ConvertInvariant<DateTime>(),
+                    OrderId = token["orderID"].ToStringInvariant(),
+                    MarketSymbol = token["symbol"].ToStringInvariant(),
+                    AveragePrice = token["avgPx"].ConvertInvariant<decimal>(),
+                    StopPrice = token["stopPx"].ConvertInvariant<decimal>(),
+                };
+                if (had)
+                {
+                    result.IsBuy = fullOrder.IsBuy;
+                }
+                else
+                {
+                    fullOrder = result;
+                }
+
+                if (!token["side"].ToStringInvariant().EqualsWithOption(string.Empty))
+                {
+                    result.IsBuy = token["side"].ToStringInvariant().EqualsWithOption("Buy");
+                    fullOrder.IsBuy = result.IsBuy;
+                }
+
+
+                // http://www.onixs.biz/fix-dictionary/5.0.SP2/tagNum_39.html
+                if (result.Result != ExchangeAPIOrderResult.Filled)//改为成交后不修改成其他状态
+                {
+                    switch (token["ordStatus"].ToStringInvariant())
+                    {
+                        case "New":
+                            result.Result = ExchangeAPIOrderResult.Pending;
+                            Logger.Info("1ExchangeAPIOrderResult.Pending:" + token.ToString());
+                            break;
+                        case "PartiallyFilled":
+                            result.Result = ExchangeAPIOrderResult.FilledPartially;
+                            Logger.Info("2ExchangeAPIOrderResult.FilledPartially:" + token.ToString());
+                            break;
+                        case "Filled":
+                            result.Result = ExchangeAPIOrderResult.Filled;
+                            Logger.Info("3ExchangeAPIOrderResult.Filled:" + token.ToString());
+                            break;
+                        case "Canceled":
+                            result.Result = ExchangeAPIOrderResult.Canceled;
+                            Logger.Info("4ExchangeAPIOrderResult.Canceled:" + token.ToString());
+                            break;
+                        default:
+                            result.Result = ExchangeAPIOrderResult.Error;
+                            Logger.Info("5ExchangeAPIOrderResult.Error:" + token.ToString());
+                            break;
+                    }
+                }
+
+                //if (had)
+                //{
+                //    if (result.Amount != 0)
+                //        fullOrder.Amount = result.Amount;
+                //    if (result.Result != ExchangeAPIOrderResult.Error)
+                //        fullOrder.Result = result.Result;
+                //    if (result.Price != 0)
+                //        fullOrder.Price = result.Price;
+                //    if (result.OrderDate > fullOrder.OrderDate)
+                //        fullOrder.OrderDate = result.OrderDate;
+                //    if (result.AmountFilled != 0)
+                //        fullOrder.AmountFilled = result.AmountFilled;
+                //    if (result.AveragePrice != 0)
+                //        fullOrder.AveragePrice = result.AveragePrice;
+                //    //                 if (result.IsBuy != fullOrder.IsBuy)
+                //    //                     fullOrder.IsBuy = result.IsBuy;
+                //}
+                //else
+                //{
+                //    fullOrder = result;
+                //}
+                //fullOrders[result.OrderId] = result;
+
+
+                //ExchangeOrderResult fullOrder;
+                if (had)
+                {
+                    if (result.Amount != 0)
+                        fullOrder.Amount = result.Amount;
+                    if (result.Result != ExchangeAPIOrderResult.Error)
+                        fullOrder.Result = result.Result;
+                    if (result.Price != 0)
+                        fullOrder.Price = result.Price;
+                    if (result.OrderDate > fullOrder.OrderDate)
+                        fullOrder.OrderDate = result.OrderDate;
+                    if (result.AmountFilled != 0)
+                        fullOrder.AmountFilled = result.AmountFilled;
+                    if (result.AveragePrice != 0)
+                        fullOrder.AveragePrice = result.AveragePrice;
+                }
+                else
+                {
+                    fullOrder = result;
+                }
+                if(result==null)
+                {
+                    Logger.Error("ExchangeAPIOrderResult:" + token.ToString());
+                    return fullOrder;
+                }
+                else
+                {
+                    fullOrders[result.OrderId] = fullOrder;
+                    return fullOrder;//这里返回的是一个引用，如果多线程再次被修改，比如重filed改成pending，后面方法执行之前被修改 ，就会导致后面出问题，应该改成返回一个clone
+                }
             }
-            else
-            {
-                fullOrder = result;
-            }
-
-            if (!token["side"].ToStringInvariant().EqualsWithOption(string.Empty))
-            {
-                result.IsBuy = token["side"].ToStringInvariant().EqualsWithOption("Buy");
-                fullOrder.IsBuy = result.IsBuy;
-            }
-
-
-            // http://www.onixs.biz/fix-dictionary/5.0.SP2/tagNum_39.html
-            switch (token["ordStatus"].ToStringInvariant())
-            {
-                case "New":
-                    result.Result = ExchangeAPIOrderResult.Pending;
-                    //Logger.Info("1ExchangeAPIOrderResult.Pending:" + token.ToString());
-                    break;
-                case "PartiallyFilled":
-                    result.Result = ExchangeAPIOrderResult.FilledPartially;
-                    //Logger.Info("2ExchangeAPIOrderResult.FilledPartially:" + token.ToString());
-                    break;
-                case "Filled":
-                    result.Result = ExchangeAPIOrderResult.Filled;
-                    //Logger.Info("3ExchangeAPIOrderResult.Filled:" + token.ToString());
-                    break;
-                case "Canceled":
-                    result.Result = ExchangeAPIOrderResult.Canceled;
-                    //Logger.Info("4ExchangeAPIOrderResult.Canceled:" + token.ToString());
-                    break;
-                default:
-                    result.Result = ExchangeAPIOrderResult.Error;
-                    //Logger.Info("5ExchangeAPIOrderResult.Error:" + token.ToString());
-                    break;
-            }
-
-            //if (had)
-            //{
-            //    if (result.Amount != 0)
-            //        fullOrder.Amount = result.Amount;
-            //    if (result.Result != ExchangeAPIOrderResult.Error)
-            //        fullOrder.Result = result.Result;
-            //    if (result.Price != 0)
-            //        fullOrder.Price = result.Price;
-            //    if (result.OrderDate > fullOrder.OrderDate)
-            //        fullOrder.OrderDate = result.OrderDate;
-            //    if (result.AmountFilled != 0)
-            //        fullOrder.AmountFilled = result.AmountFilled;
-            //    if (result.AveragePrice != 0)
-            //        fullOrder.AveragePrice = result.AveragePrice;
-            //    //                 if (result.IsBuy != fullOrder.IsBuy)
-            //    //                     fullOrder.IsBuy = result.IsBuy;
-            //}
-            //else
-            //{
-            //    fullOrder = result;
-            //}
-            //fullOrders[result.OrderId] = result;
-
-
-            //ExchangeOrderResult fullOrder;
-            if (had)
-            {
-                if (result.Amount != 0)
-                    fullOrder.Amount = result.Amount;
-                if (result.Result != ExchangeAPIOrderResult.Error)
-                    fullOrder.Result = result.Result;
-                if (result.Price != 0)
-                    fullOrder.Price = result.Price;
-                if (result.OrderDate > fullOrder.OrderDate)
-                    fullOrder.OrderDate = result.OrderDate;
-                if (result.AmountFilled != 0)
-                    fullOrder.AmountFilled = result.AmountFilled;
-                if (result.AveragePrice != 0)
-                    fullOrder.AveragePrice = result.AveragePrice;
-            }
-            else
-            {
-                fullOrder = result;
-            }
-            if(result==null)
-            {
-                Logger.Error("ExchangeAPIOrderResult:" + token.ToString());
-                return fullOrder;
-            }
-            else
-            {
-                fullOrders[result.OrderId] = fullOrder;
-                return fullOrder;
-            }
-
         }
 
 

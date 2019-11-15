@@ -330,7 +330,19 @@ namespace ExchangeSharp
         protected override async Task<ExchangeOrderBook> OnGetOrderBookAsync(string marketSymbol, int maxCount = 100)
         {
             JToken obj = await MakeJsonRequestAsync<JToken>("/depth?symbol=" + marketSymbol + "&limit=" + maxCount);
-            return ExchangeAPIExtensions.ParseOrderBookFromJTokenArrays(obj, sequence: "lastUpdateId", maxCount: maxCount);
+            ExchangeOrderBook orderBook = ExchangeAPIExtensions.ParseOrderBookFromJTokenArrays(obj, sequence: "lastUpdateId", maxCount: maxCount);
+            return orderBook;
+        }
+        /// <summary>
+        /// 币安不用缓存，，用缓存 没有返回
+        /// </summary>
+        /// <param name="marketSymbol"></param>
+        /// <param name="maxCount"></param>
+        /// <returns></returns>
+        public override async Task<ExchangeOrderBook> GetOrderBookAsync(string marketSymbol, int maxCount = 100)
+        {
+            marketSymbol = NormalizeMarketSymbol(marketSymbol);
+            return await OnGetOrderBookAsync(marketSymbol, maxCount);
         }
 
         protected override async Task OnGetHistoricalTradesAsync(Func<IEnumerable<ExchangeTrade>, bool> callback, string marketSymbol, DateTime? startDate = null, DateTime? endDate = null)
@@ -445,6 +457,7 @@ namespace ExchangeSharp
             // Binance does not accept quantities with more than 20 decimal places.
             payload["quantity"] = Math.Round(outputQuantity, 20);
             payload["newOrderRespType"] = "FULL";
+            payload["recvWindow"] = 54545;
 
             if (order.OrderType != OrderType.Market)
             {
@@ -454,6 +467,7 @@ namespace ExchangeSharp
             order.ExtraParameters.CopyTo(payload);
 
             JToken token = await MakeJsonRequestAsync<JToken>("/order", BaseUrlPrivate, payload, "POST");
+            //JToken token = await MakeJsonRequestAsync<JToken>("/order/test", BaseUrlPrivate, payload, "POST");
             return ParseOrder(token);
         }
 
