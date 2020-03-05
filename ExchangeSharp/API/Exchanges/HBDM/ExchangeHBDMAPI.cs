@@ -670,8 +670,9 @@ namespace ExchangeSharp
                     Logger.Debug("GetOpenPositionAsync " + count + poitionR.ToString());
                     if (count>=2)
                     {
-                        Logger.Debug("双向开仓错误停止程序 ");
-                        Environment.Exit(0);
+                        Logger.Debug("双向开仓错误停止程序 ");//可能是限价单导致的
+                        throw new Exception("双向开仓错误!!!!!!!!!!!!");
+                        //Environment.Exit(0);
                     }
                 }
             }
@@ -791,24 +792,20 @@ namespace ExchangeSharp
         }
         public override async Task<decimal> GetWalletSummaryAsync(string marketSymbol)
         {
-            string symbol = "";
-            if (!string.IsNullOrEmpty(marketSymbol))
-            {
-                GetSymbolAndContractCode(marketSymbol, out string s, out string contractCode, out string contractType);  //[0]symbol [1]contract_type
-               
-                symbol = s;
-            }
-           
+            string symbol = marketSymbol;
+            
             var payload = await GetNoncePayloadAsync();
-            JToken token = await MakeJsonRequestAsync<JToken>($"/api/v1/contract_account_inf", BaseUrl, payload, "POST ");
-            foreach (var item in token)
+            JToken token = await MakeJsonRequestAsync<JToken>($"/api/v1/contract_account_info", BaseUrl, payload, "POST");
+            foreach (JToken position in token)
             {
-                var transactType = item["transactType"].ToStringInvariant();
-                var count = item["amount"].ConvertInvariant<decimal>();
+                string _symbol = position["symbol"].ConvertInvariant<string>();
 
-                if (transactType.Equals("Total"))
+                decimal margin_balance = position["margin_balance"].ConvertInvariant<decimal>();
+                decimal liquidation_price = position["liquidation_price"].ConvertInvariant<decimal>();
+                Logger.Debug(position.ToString());
+                if (symbol.Equals(_symbol))
                 {
-                    return count;
+                    return margin_balance;
                 }
             }
             return 0;

@@ -637,7 +637,7 @@ namespace ExchangeSharp
             foreach (var item in token)
             {
                 var transactType = item["transactType"].ToStringInvariant();
-                var count = item["amount"].ConvertInvariant<decimal>();
+                var count = item["marginBalance"].ConvertInvariant<decimal>();
 
                 if (transactType.Equals("Total"))
                 {
@@ -697,7 +697,7 @@ namespace ExchangeSharp
             List<ExchangeOrderResult> orders = new List<ExchangeOrderResult>();
             Dictionary<string, object> payload = await GetNoncePayloadAsync();
             //string query = "/order";
-            string query = "/order?filter={\"ordType\":\""+ orderType.ToString() + "\"}";
+            string query = "/order?filter={\"ordType\":\""+ orderType.ToString() + "\""+","+"\"open\":" + "true" + "}";
             if (!string.IsNullOrWhiteSpace(marketSymbol))
             {
                 query += "&symbol=" + NormalizeMarketSymbol(marketSymbol);
@@ -917,6 +917,7 @@ namespace ExchangeSharp
                 payload["price"] = order.Price;
             if (order.StopPrice != 0)
                 payload["stopPx"] = order.StopPrice;
+            //payload["displayQty"] = 0;//隐藏订单
             if (order.ExtraParameters.TryGetValue("execInst", out var execInst))
             {
                 payload["execInst"] = execInst;
@@ -925,6 +926,7 @@ namespace ExchangeSharp
             {
                 payload["orderID"] = orderID;
             }
+           
         }
 
         private ExchangeOrderResult ParseOrder(JToken token)
@@ -1028,11 +1030,18 @@ namespace ExchangeSharp
                 // http://www.onixs.biz/fix-dictionary/5.0.SP2/tagNum_39.html
                 if (result.Result != ExchangeAPIOrderResult.Filled)//改为成交后不修改成其他状态
                 {
+
                     switch (token["ordStatus"].ToStringInvariant())
                     {
                         case "New":
                             result.Result = ExchangeAPIOrderResult.Pending;
                             Logger.Info("1ExchangeAPIOrderResult.Pending:" + token.ToString());
+                            if (token["triggered"].ToStringInvariant().Equals("StopOrderTriggered"))
+                            {
+                                result.Result = ExchangeAPIOrderResult.TriggerPending;
+                            }
+
+
                             break;
                         case "PartiallyFilled":
                             result.Result = ExchangeAPIOrderResult.FilledPartially;
@@ -1051,6 +1060,15 @@ namespace ExchangeSharp
                             Logger.Info("5ExchangeAPIOrderResult.Error:" + token.ToString());
                             break;
                     }
+
+                    if (token["triggered"]!=null)
+                    {
+                        if (token["triggered"].ToStringInvariant().Equals("StopOrderTriggered"))
+                        {
+                            result.Result = ExchangeAPIOrderResult.TriggerPending;
+                        }
+                    }
+                   
                 }
 
                 //if (had)

@@ -50,7 +50,6 @@
     <Compile Remove="API\Exchanges\Kucoin\**" />
     <Compile Remove="API\Exchanges\LBank\**" />
     <Compile Remove="API\Exchanges\Livecoin\**" />
-    <Compile Remove="API\Exchanges\Okex\**" />
     <Compile Remove="API\Exchanges\Poloniex\**" />
     <Compile Remove="API\Exchanges\TuxExchange\**" />
     <Compile Remove="API\Exchanges\Yobit\**" />
@@ -68,7 +67,6 @@
     <EmbeddedResource Remove="API\Exchanges\Kucoin\**" />
     <EmbeddedResource Remove="API\Exchanges\LBank\**" />
     <EmbeddedResource Remove="API\Exchanges\Livecoin\**" />
-    <EmbeddedResource Remove="API\Exchanges\Okex\**" />
     <EmbeddedResource Remove="API\Exchanges\Poloniex\**" />
     <EmbeddedResource Remove="API\Exchanges\TuxExchange\**" />
     <EmbeddedResource Remove="API\Exchanges\Yobit\**" />
@@ -86,7 +84,6 @@
     <None Remove="API\Exchanges\Kucoin\**" />
     <None Remove="API\Exchanges\LBank\**" />
     <None Remove="API\Exchanges\Livecoin\**" />
-    <None Remove="API\Exchanges\Okex\**" />
     <None Remove="API\Exchanges\Poloniex\**" />
     <None Remove="API\Exchanges\TuxExchange\**" />
     <None Remove="API\Exchanges\Yobit\**" />
