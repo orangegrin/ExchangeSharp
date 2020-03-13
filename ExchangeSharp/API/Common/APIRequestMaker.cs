@@ -167,9 +167,10 @@ namespace ExchangeSharp
             {
                 Method = method
             };
-            request.AddHeader("accept-language", "en-US,en;q=0.5");
-            request.AddHeader("content-type", api.RequestContentType);
-            request.AddHeader("user-agent", BaseAPI.RequestUserAgent);
+            //request.AddHeader("accept-language", "en-US,en;q=0.5");
+            //request.AddHeader("content-type", api.RequestContentType);
+            //request.AddHeader("user-agent", BaseAPI.RequestUserAgent);
+            request.AddHeader("Content-Type", api.RequestContentType);
             request.Timeout = request.ReadWriteTimeout = (int)api.RequestTimeout.TotalMilliseconds;
             await api.ProcessRequestAsync(request, payload);
             HttpWebResponse response = null;
