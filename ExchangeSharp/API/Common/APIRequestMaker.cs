@@ -92,10 +92,34 @@ namespace ExchangeSharp
 
             public async Task WriteAllAsync(byte[] data, int index, int length)
             {
-                using (Stream stream = await request.GetRequestStreamAsync())
+                try
                 {
-                    await stream.WriteAsync(data, 0, data.Length);
+                    if (request.Method == "GET")
+                    {
+                        request.Method = "POST";
+                        using (Stream stream = await request.GetRequestStreamAsync())
+                        {
+                            await stream.WriteAsync(data, 0, data.Length);
+                        }
+                        request.Method = "GET";
+                    }
+                    else
+                    {
+                        using (Stream stream = await request.GetRequestStreamAsync())
+                        {
+                            await stream.WriteAsync(data, 0, data.Length);
+                        }
+                    }
+                   
+//                     Stream stream = await request.GetRequestStreamAsync();
+//                     await stream.WriteAsync(data, 0, data.Length);
                 }
+                catch (Exception ex)
+                {
+                    Logger.Debug(ex.ToString());
+                    throw ex;
+                }
+               
             }
         }
 
@@ -173,6 +197,7 @@ namespace ExchangeSharp
             request.AddHeader("Content-Type", api.RequestContentType);
             request.Timeout = request.ReadWriteTimeout = (int)api.RequestTimeout.TotalMilliseconds;
             await api.ProcessRequestAsync(request, payload);
+            //request.WritePayloadFormToRequestAsync
             HttpWebResponse response = null;
             string responseString = null;
 

@@ -505,11 +505,11 @@ namespace ExchangeSharp
         /// <returns>Protected data</returns>
         public static byte[] Protect(byte[] data, byte[] optionalEntropy = null, DataProtectionScope scope = DataProtectionScope.CurrentUser)
         {
-//             if (CryptoUtility.IsWindows)
-//             {
-//                 return CryptOperationWindows(true, data, optionalEntropy, scope);
-//             }
-//             else
+            if (CryptoUtility.IsWindows)
+            {
+                return CryptOperationWindows(true, data, optionalEntropy, scope);
+            }
+            else
             {
                 return ManagedProtection.Protect(data, optionalEntropy, scope);
             }

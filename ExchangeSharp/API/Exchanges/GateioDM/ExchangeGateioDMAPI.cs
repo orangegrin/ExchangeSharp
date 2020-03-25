@@ -11,8 +11,8 @@ namespace ExchangeSharp
 {
     public sealed partial class ExchangeGateioDMAPI : ExchangeAPI
     {
-//         public override string BaseUrl { get; set; } = "https://fx-api.gateio.ws";
-//         public string BaseUrlV1 { get; set; } = "https://fx-api.gateio.ws/api/v4";
+        //         public override string BaseUrl { get; set; } = "https://fx-api.gateio.ws";
+        //         public string BaseUrlV1 { get; set; } = "https://fx-api.gateio.ws/api/v4";
 
         public override string BaseUrl { get; set; } = "https://fx-api-testnet.gateio.ws";
         public string BaseUrlV1 { get; set; } = "https://fx-api-testnet.gateio.ws/api/v4";
@@ -33,7 +33,7 @@ namespace ExchangeSharp
         public ExchangeGateioDMAPI()
         {
             RequestContentType = "application/x-www-form-urlencoded";
-            NonceStyle = NonceStyle.UnixMilliseconds;
+            NonceStyle = NonceStyle.UnixSeconds;
             MarketSymbolSeparator = "_";//string.Empty;
             MarketSymbolIsUppercase = false;
             WebSocketOrderBookType = WebSocketOrderBookType.FullBookSometimes;
@@ -50,6 +50,19 @@ namespace ExchangeSharp
                 return ExchangeMarketSymbolToGlobalMarketSymbolWithSeparator(marketSymbol.Substring(0, 3) + GlobalMarketSymbolSeparator + marketSymbol.Substring(3, 3), GlobalMarketSymbolSeparator);
             }
             return ExchangeMarketSymbolToGlobalMarketSymbolWithSeparator(marketSymbol.Substring(3) + GlobalMarketSymbolSeparator + marketSymbol.Substring(0, 3), GlobalMarketSymbolSeparator);
+        }
+
+        /// <summary>
+        /// marketSymbol ws 2 web 
+        /// </summary>
+        /// <param name="marketSymbol"></param>
+        /// <returns></returns>
+        private void GetSymbolAndContractCode(string marketSymbol, out string symbol, out string contractCode)
+        {
+            string[] strAry = new string[2];
+            string[] splitAry = marketSymbol.Split(MarketSymbolSeparator.ToCharArray(), StringSplitOptions.None);
+            symbol = marketSymbol;
+            contractCode =splitAry[0];
         }
         //1min, 5min, 15min, 30min, 60min,4hour,1day, 1mon
         public override string PeriodSecondsToString(int seconds)
@@ -257,23 +270,54 @@ namespace ExchangeSharp
                     var nonce = payload["nonce"].ConvertInvariant<long>();
                     payload.Remove("nonce");
 
-                    payload = new Dictionary<string, object>();
-                    var strPayload = CryptoUtility.GetJsonForPayload(payload);
+                    var strPayload = CryptoUtility.GetJsonForPayload(payload,false);
+                    /*
+                    var  testPayload = new Dictionary<string, object>();
+                    testPayload["contract"] = "BTC_USD";
+                    testPayload["type"] = "limit";
+                    testPayload["size"] = 100;
+                    testPayload["price"] = 6800;
+                    testPayload["time_in_force"] = "gtc";
+                    var testPayloadJson = CryptoUtility.GetJsonForPayload(testPayload);
+                    string tStr = CryptoUtility.GetSHA512HashFromString(testPayloadJson);
+                    */
+                    var msg = "leverage=25";//CryptoUtility.GetFormForPayload(payload,false);
                     string tStr = CryptoUtility.GetSHA512HashFromString(strPayload);
                     //str = "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e";
-                    long ts = nonce / 1000;
-                    var sign = $"{request.Method}\n{request.RequestUri.AbsolutePath}\n{"leverage=25"}\n{tStr}\n{ts}";
-                    //var sign = $"{request.Method}\n{request.RequestUri.AbsolutePath}\n{request.RequestUri.Query}\n{str}\n{nonce}";
+                    long ts = nonce;
+                    string pre = request.RequestUri.AbsolutePath.Split("?".ToCharArray(), StringSplitOptions.None)[0];
+                    var sign = $"{request.Method}\n{pre}\n{request.RequestUri.Query.Replace("?","")}\n{tStr}\n{ts}";
+                    //var sign = $"{request.Method}\n{request.RequestUri.AbsolutePath}\n{msg}\n{tStr}\n{nonce}";
                     string signature = CryptoUtility.SHA512Sign(sign, CryptoUtility.ToUnsecureBytesUTF8(PrivateApiKey)).ToStringLowerInvariant();
 
+                    string key = PublicApiKey.ToUnsecureString();
+                    string ser = PrivateApiKey.ToUnsecureString();
                     request.AddHeader("Content-Type", "application/json");
                     request.AddHeader("Accept", "application/json");
                     request.AddHeader("KEY", PublicApiKey.ToUnsecureString());
                     request.AddHeader("SIGN", signature);
                     request.AddHeader("Timestamp", (ts).ToString());
-                    //request.AddHeader("SIGN", "53a2d86676e21e641b8586db87f1e6294ca68ea329862496e31cdf52739830e5b69cb5b8b40fe47801c218c0d39c4b6cd4c41114b97d67661282855778c3fbe5");
-                    //request.AddHeader("Timestamp", "1552966279.5218291");
-                    //request.AddHeader("Timestamp", CryptoUtility.UnixTimeStampToDateTimeMilliseconds((nonce.ConvertInvariant<long>() / 1000)).ToString("s"));
+
+
+
+//                     String postData = "";
+//                     if (arguments.Count > 0)
+//                     {
+//                         foreach (var str in arguments)
+//                         {
+//                             if (postData.Length > 0)
+//                             {
+//                                 postData += "&";
+//                             }
+//                             postData += str.Key + "=" + str.Value;
+//                         }
+//                     }
+//                     request = (HttpWebRequest)WebRequest.Create(url);
+//                     request.Method = requestType;
+//                     request.ContentType = "application/x-www-form-urlencoded";
+//                     request.Headers.Add("Key", KEY);
+//                     request.Headers.Add("Sign", (String)GetHMACSHA512.hash_hmac(postData, SECRET));
+
 
                     await CryptoUtility.WritePayloadJsonToRequestAsync(request, payload);
                 }
@@ -420,24 +464,13 @@ namespace ExchangeSharp
 
         private async Task<ExchangeOrderResult> m_OnPlaceOrderAsync(ExchangeOrderRequest order, bool isOpen)
         {
-            await SetLeverage(order);
-
+            //await SetLeverage(order);
+            GetSymbolAndContractCode(order.MarketSymbol, out string symbol, out string contractCode);
 
             Dictionary<string, object> payload = await GetNoncePayloadAsync();
-            string addUrl = "/api/v1/contract_order";
+            string addUrl = string.Format("/futures/{0}/orders", contractCode);
             AddOrderToPayload(order, isOpen, payload);
-            //HuobiApi api = new HuobiApi(PublicApiKey.ToUnsecureString(), "7f0a0c5c-24fd0bb9-eb64134f-2e1b6");
-            //OrderPlaceRequest req = new OrderPlaceRequest();
-            //req.volume = int.Parse( payload["volume"].ToString());
-            //req.direction = payload["direction"].ToString();
-            //req.price = int.Parse(payload["price"].ToString());
-            //req.offset = payload["offset"].ToString();
-            //req.lever_rate = int.Parse(payload["lever_rate"].ToString());
-            ////req.contract_code = "BTC181214";
-            //req.order_price_type = payload["order_price_type"].ToString();
-            //req.symbol = payload["symbol"].ToString();
-            //req.contract_type = payload["contract_type"].ToString();
-            //string result = api.OrderPlace(req);
+           
 
             JObject token = await MakeJsonRequestAsync<JObject>(addUrl, BaseUrl, payload, "POST");
  
@@ -447,10 +480,13 @@ namespace ExchangeSharp
 
         private async Task<ExchangeOrderResult> SetLeverage(ExchangeOrderRequest order)
         {
-            Dictionary<string, object> payload = await GetNoncePayloadAsync();
-            string addUrl = string.Format("/futures/positions/{0}/leverage", order.MarketSymbol) ;
+            GetSymbolAndContractCode(order.MarketSymbol, out string symbol, out string contractCode);
 
-            payload["leverage"] = "25";
+            Dictionary<string, object> payload = await GetNoncePayloadAsync();
+            string addUrl = string.Format("/futures/{0}/positions/{1}/leverage", contractCode.ToLower(), order.MarketSymbol) ;
+            //string addUrl = string.Format("/futures/positions/{0}/leverage",  order.MarketSymbol);
+            addUrl = addUrl + "?leverage=" + 25;
+            //payload["leverage"] = "25";
             JObject token = await MakeJsonRequestAsync<JObject>(addUrl, BaseUrlV1, payload, "POST");
 
             JObject jo = JsonConvert.DeserializeObject<JObject>(token.Root.ToString());
@@ -546,13 +582,14 @@ namespace ExchangeSharp
         private void AddOrderToPayload(ExchangeOrderRequest order,bool isOpen,Dictionary<string, object> payload)
         {
             payload["contract"] = order.MarketSymbol;
-            
-            //payload["contract_code"] = order.OrderType.ToStringInvariant();
-            payload["price"] = order.OrderType == OrderType.Limit ? "" + order.Price : "0";   
-            payload["size"] = order.IsBuy ? order.Amount : -order.Amount;  
-            payload["iceberg"] = 0;
-            //payload["lever_rate"] = 20;
-            payload["price"] = order.OrderType == OrderType.Limit? "limit": "opponent";
+
+            payload["size"] = order.IsBuy ? order.Amount : -order.Amount;
+            //payload["iceberg"] = 0;
+            payload["price"] = order.OrderType == OrderType.Limit ? order.Price.ToString() : "0";
+            //payload["close"] = false;
+            //payload["reduce_only"] = false;
+            //payload["tif"] = false;
+            //payload["text"] = false;
             if (order.ExtraParameters.TryGetValue("execInst", out var execInst))
             {
                 payload["execInst"] = execInst;

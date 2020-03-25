@@ -240,7 +240,16 @@ namespace ExchangeSharp
             Write(ExchangeSharp.LogLevel.Debug, text, args);
             //Console.WriteLine(string.Format(DateTime.Now + " " + text, args));
         }
-
+        /// <summary>
+        /// Log a Trace message
+        /// </summary>
+        /// <param name="text">Text with format</param>
+        /// <param name="args">Format args</param>
+        public static void Trace(string text, params object[] args)
+        {
+            Write(ExchangeSharp.LogLevel.Trace, text, args);
+            //Console.WriteLine(string.Format(DateTime.Now + " " + text, args));
+        }
         /// <summary>
         /// Write to the log
         /// </summary>

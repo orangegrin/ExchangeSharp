@@ -15,6 +15,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
 using Newtonsoft.Json;
@@ -24,7 +25,7 @@ namespace ExchangeSharp
 {
     public sealed partial class ExchangeFTXAPI : ExchangeAPI
     {
-        public override string BaseUrl { get; set; } = "https://www.bitmex.com/api/v1";
+        public override string BaseUrl { get; set; } = "https://ftx.com/api";
         public override string BaseUrlWebSocket { get; set; } = "wss://ftx.com/ws";
 //         public override string BaseUrl { get; set; } = "https://testnet.bitmex.com/api/v1";
 //         public override string BaseUrlWebSocket { get; set; } = "wss://testnet.bitmex.com/realtime";
@@ -32,22 +33,34 @@ namespace ExchangeSharp
         private SortedDictionary<long, decimal> dict_long_decimal = new SortedDictionary<long, decimal>();
         private SortedDictionary<decimal, long> dict_decimal_long = new SortedDictionary<decimal, long>();
 
+        private string OrderIdStart;
+        private int OrderNum;
+       
         public ExchangeFTXAPI()
         {
             RequestWindow = TimeSpan.Zero;
-            NonceStyle = NonceStyle.ExpiresUnixSeconds;
+            NonceStyle = NonceStyle.ExpiresUnixMilliseconds;
 
             // make the nonce go 10 seconds into the future (the offset is subtracted)
             // this will give us an api-expires 60 seconds into the future
-            NonceOffset = TimeSpan.FromSeconds(-60.0);
+            NonceOffset = TimeSpan.FromSeconds(10.0);
 
             MarketSymbolSeparator = string.Empty;
             RequestContentType = "application/json";
             WebSocketOrderBookType = WebSocketOrderBookType.FullBookFirstThenDeltas;
 
             RateLimit = new RateGate(300, TimeSpan.FromMinutes(5));
+            OrderIdStart = (long)CryptoUtility.UtcNow.UnixTimestampFromDateTimeMilliseconds()+"_";
+            OrderNum = 0;
         }
-        
+        /// <summary>
+        /// 返回 客户端id
+        /// </summary>
+        /// <returns></returns>
+        private string GetClinetOrderID()
+        {
+            return OrderIdStart + (OrderNum++);
+        }
         public override string ExchangeMarketSymbolToGlobalMarketSymbol(string marketSymbol)
         {
             throw new NotImplementedException();
@@ -77,20 +90,6 @@ namespace ExchangeSharp
                 request.AddHeader("FTX-TS", nonce.ToStringInvariant());
 
                 await CryptoUtility.WritePayloadJsonToRequestAsync(request, payload);
-//                 var method = HttpMethod.Get;
-//                 var endpoint = $"/api/account";
-//                 var request = new HttpRequestMessage(method, endpoint);
-//                 var _nonce = (DateTime.UtcNow - start).TotalMilliseconds;
-// 
-//                 var hashMaker = new HMACSHA256(Encoding.UTF8.GetBytes(""YOUR_API_SECRET""));
-//                 var signaturePayload = $"{_nonce}{method.ToString().ToUpper()}{endpoint}";
-//                 var hash = hashMaker.ComputeHash(Encoding.UTF8.GetBytes(signaturePayload));
-//                 var hashString = BitConverter.ToString(hash).Replace("-", string.Empty);
-//                 var signature = hashString.ToLower();
-// 
-//                 request.Headers.Add("FTX-KEY", "YOUR_API_KEY");
-//                 request.Headers.Add("FTX-SIGN", signature);
-//                 request.Headers.Add("FTX-TS", _nonce.ToString());
             }
         }
 
@@ -360,20 +359,22 @@ namespace ExchangeSharp
         private Dictionary<string, ExchangeOrderResult> fullOrders = new Dictionary<string, ExchangeOrderResult>();
         #region WebSocket APIs
         protected override IWebSocket OnGetOrderDetailsWebSocket(Action<ExchangeOrderResult> callback)
-        {
+        { 
+            Timer pingTimer = null;
             //return base.OnGetOrderDetailsWebSocket(callback);
 
             return ConnectWebSocket(string.Empty, (_socket, msg) =>
              {
 
                  var str = msg.ToStringFromUTF8();
-                 if(str.Equals("pong"))//心跳添加
+                 if(str.Contains("pong"))//心跳添加
                  {
-                     callback(new ExchangeOrderResult() {MarketSymbol = str });
+                     callback(new ExchangeOrderResult() {MarketSymbol = "pong" });
                  }
                  else
                  {
                      JToken token = JToken.Parse(str);
+                     //Logger.Debug(token.ToString());
 
                      if (token["error"] != null)
                      {
@@ -381,23 +382,26 @@ namespace ExchangeSharp
                          return Task.CompletedTask;
                      }
                      //{"success":true,"request":{"op":"authKeyExpires","args":["2xrwtDdMimp5Oi3F6oSmtsew",1552157533,"1665aedbd293e435fafbfaba2e5475f882bae9228bab0f29d9f3b5136d073294"]}}
-                     if (token["request"] != null && token["request"]["op"].ToStringInvariant() == "authKeyExpires")
-                     {
-                         //{ "op": "subscribe", "args": ["order"]}
-                         _socket.SendMessageAsync(new { op = "subscribe", args = "order" });
+                     if (token["type"] != null && token["type"].ToStringInvariant() == "subscribed")
+                     {  // subscription successful
+                         if (pingTimer == null)
+                         {
+                             pingTimer = new Timer(callback: async s => await _socket.SendMessageAsync(new { op = "ping" }),
+                                 state: null, dueTime: 0, period: 15000); // send a ping every 15 seconds
+                         }
                          return Task.CompletedTask;
                      }
-                     if (token["table"] == null)
+                     if (token["data"] == null)
                      {
                          return Task.CompletedTask;
                      }
                      //{ "table":"order","action":"insert","data":[{ "orderID":"b48f4eea-5320-cc06-68f3-d80d60896e31","clOrdID":"","clOrdLinkID":"","account":954891,"symbol":"XBTUSD","side":"Buy","simpleOrderQty":null,"orderQty":100,"price":3850,"displayQty":null,"stopPx":null,"pegOffsetValue":null,"pegPriceType":"","currency":"USD","settlCurrency":"XBt","ordType":"Limit","timeInForce":"GoodTillCancel","execInst":"ParticipateDoNotInitiate","contingencyType":"","exDestination":"XBME","ordStatus":"New","triggered":"","workingIndicator":false,"ordRejReason":"","simpleLeavesQty":null,"leavesQty":100,"simpleCumQty":null,"cumQty":0,"avgPx":null,"multiLegReportingType":"SingleSecurity","text":"Submission from www.bitmex.com","transactTime":"2019-03-09T19:24:21.789Z","timestamp":"2019-03-09T19:24:21.789Z"}]}
-                     var action = token["action"].ToStringInvariant();
-                     JArray data = token["data"] as JArray;
-                     foreach (var t in data)
+                     var action = token["channel"].ToStringInvariant();
+                     var data = token["data"];
+                     //foreach (var t in data)
                      {
-                         var marketSymbol = t["symbol"].ToStringInvariant();
-                         var order = ParseOrder(t);
+                         var marketSymbol = data["market"].ToStringInvariant();
+                         var order = ParseOrder(data);
                          callback(order);
                          //callback(new KeyValuePair<string, ExchangeTrade>(marketSymbol, t.ParseTrade("size", "price", "side", "timestamp", TimestampType.Iso8601, "trdMatchID")));
 
@@ -408,8 +412,16 @@ namespace ExchangeSharp
              {
                  //连接中断也不应该删除历史信息
                  //fullOrders.Clear();
-                 var payloadJSON = GeneratePayloadJSON();
-                 await _socket.SendMessageAsync(payloadJSON.Result);
+                 var payloadJSON = await GeneratePayloadJSON();
+                 Logger.Debug(payloadJSON.ToString());
+
+                 await _socket.SendMessageAsync(payloadJSON);
+                 await _socket.SendMessageAsync(new { op = "subscribe", channel = "orders" });
+             },async(_socket) =>
+             {
+                 pingTimer.Dispose();
+                 pingTimer = null;
+                 
              });
 
         }
@@ -417,12 +429,19 @@ namespace ExchangeSharp
         private async Task<string> GeneratePayloadJSON()
         {
             object expires = await GenerateNonceAsync();
-            var message = "GET/realtime" + expires;
-            var signature = CryptoUtility.SHA256Sign(message, PrivateApiKey.ToUnsecureString());
+            var privateKey = PrivateApiKey.ToUnsecureString();
+
+
+            //expires = 1557246346499;
+            //privateKey = "Y2QTHI23f23f23jfjas23f23To0RfUwX3H42fvN-";
+
+
+            var message = expires + "websocket_login";
+            var signature = CryptoUtility.SHA256Sign(message, privateKey);
             Dictionary<string, object> payload = new Dictionary<string, object>
-                {
-                    { "op", "authKeyExpires"},
-                    { "args", new object[]{ PublicApiKey.ToUnsecureString(),expires, signature } }
+                { 
+                    { "args", new { key = PublicApiKey.ToUnsecureString() ,sign = signature ,time = expires } },
+                     { "op", "login"}
                 };
             return CryptoUtility.GetJsonForPayload(payload);
         }
@@ -480,7 +499,7 @@ namespace ExchangeSharp
 {"success":true,"subscribe":"orderBookL2:XBTUSD","request":{"op":"subscribe","args":["orderBookL2:XBTUSD"]}}
 {"table":"orderBookL2","action":"update","data":[{"symbol":"XBTUSD","id":8799343000,"side":"Buy","size":350544}]}
              */
-
+            Timer pingTimer = null;
             if (marketSymbols == null || marketSymbols.Length == 0)
             {
                 marketSymbols = GetMarketSymbolsAsync().Sync().ToArray();
@@ -494,12 +513,23 @@ namespace ExchangeSharp
                 //                 {
                 //                     return Task.CompletedTask;
                 //                 }
-                Logger.Debug(token.ToString());
+                //Logger.Debug(token.ToString());
                 if (token.ToString().Contains("pong"))
                 {
                     return Task.CompletedTask;
                 }
+
                 var action = token["type"].ToStringInvariant();
+                if (token["type"] != null && token["type"].ToStringInvariant() == "subscribed")
+                {  // subscription successful
+                    if (pingTimer == null)
+                    {
+                        pingTimer = new Timer(callback: async s => await _socket.SendMessageAsync(new { op = "ping" }),
+                            state: null, dueTime: 0, period: 15000); // send a ping every 15 seconds
+                    }
+                    return Task.CompletedTask;
+                }
+
                 JArray bids = token["data"]["bids"] as JArray;
                 JArray asks = token["data"]["asks"] as JArray;
 
@@ -541,6 +571,11 @@ namespace ExchangeSharp
                     marketSymbols = (await GetMarketSymbolsAsync()).ToArray();
                 }
                 await _socket.SendMessageAsync(new { op = "subscribe", channel= "orderbook", market = this.NormalizeMarketSymbol(marketSymbols[0]) });
+            }, async (_socket) =>
+            {
+                pingTimer.Dispose();
+                pingTimer = null;
+
             });
         }
         #endregion
@@ -651,19 +686,48 @@ namespace ExchangeSharp
         }
         public override async Task<decimal> GetWalletSummaryAsync(string symbol)
         {
+            /*
+             {[
+  {
+    "coin": "USD",
+    "free": -1.24133108,
+    "total": -1.24133108,
+    "usdValue": -1.24133108
+  },
+  {
+    "coin": "BTC",
+    "free": 0.04766072,
+    "total": 0.04794836,
+    "usdValue": 252.96543570105575
+  }
+]}
+             */
             var payload = await GetNoncePayloadAsync();
-            JToken token = await MakeJsonRequestAsync<JToken>($"/user/walletSummary?currency={symbol}", BaseUrl, payload);
-            foreach (var item in token)
+            JToken token = await MakeJsonRequestAsync<JToken>($"/wallet/balances", BaseUrl, payload);
+            decimal totalAmount = 0;
+            if ( string.IsNullOrEmpty(symbol))//获取全部
             {
-                var transactType = item["transactType"].ToStringInvariant();
-                var count = item["marginBalance"].ConvertInvariant<decimal>();
-
-                if (transactType.Equals("Total"))
+                foreach (var item in token)
                 {
-                    return count;
+                    var coin = item["coin"].ToStringInvariant();
+                    var count = item["usdValue"].ConvertInvariant<decimal>();
+                    totalAmount += count;
                 }
             }
-            return 0;
+            else
+            {
+                foreach (var item in token)
+                {
+                    var coin = item["coin"].ToStringInvariant();
+                    var count = item["usdValue"].ConvertInvariant<decimal>();
+                    if (coin.Equals(symbol))
+                    {
+                        totalAmount = count;
+                    }
+                    
+                }
+            }
+            return totalAmount;
         }
 
         protected override async Task<Dictionary<string, decimal>> OnGetAmountsAvailableToTradeAsync()
@@ -749,20 +813,34 @@ namespace ExchangeSharp
             {
                 if (marketSymbol != null)
                     payload["symbol"] = marketSymbol;
-                JToken token = await MakeJsonRequestAsync<JToken>("/order/all", BaseUrl, payload, "DELETE");
+                JToken token = await MakeJsonRequestAsync<JToken>("/orders", BaseUrl, payload, "DELETE");
             }
             else
             {
                 payload["orderID"] = orderId;
-                JToken token = await MakeJsonRequestAsync<JToken>("/order", BaseUrl, payload, "DELETE");
+                JToken token = await MakeJsonRequestAsync<JToken>("/orders", BaseUrl, payload, "DELETE");
             }
         }
 
         protected override async Task<ExchangeOrderResult> OnPlaceOrderAsync(ExchangeOrderRequest order)
         {
             Dictionary<string, object> payload = await GetNoncePayloadAsync();
-            AddOrderToPayload(order, payload);
-            JToken token = await MakeJsonRequestAsync<JToken>("/order", BaseUrl, payload, "POST");
+            JToken token;
+            if (order.ExtraParameters.TryGetValue("orderID", out var orderID))
+            {
+                Logger.Debug("change price:"+ orderID);
+                payload["price"] = order.Price;
+                payload["size"] = order.Amount;
+                //payload["clientId"] = orderID;
+                token = await MakeJsonRequestAsync<JToken>("/orders/by_client_id/"+ orderID+"/modify", BaseUrl, payload, "POST");
+            }
+            else
+            {
+                
+                AddOrderToPayload(order, payload);
+                Logger.Debug("add order:" + payload["clientId"]);
+                token = await MakeJsonRequestAsync<JToken>("/orders", BaseUrl, payload, "POST");
+            }
             return ParseOrder(token);
         }
 
@@ -813,223 +891,159 @@ namespace ExchangeSharp
         public override async Task<ExchangeMarginPositionResult> GetOpenPositionAsync(string marketSymbol)
         {
             /*
-             * [
+   
+{
+{{
+  "collateralUsed": 49.51748,
+  "cost": 247.5874,
+  "entryPrice": 117.34,
+  "estimatedLiquidationPrice": 1.4127234583184682,
+  "future": "ETH-PERP",
+  "initialMarginRequirement": 0.2,
+  "longOrderSize": 0.0,
+  "maintenanceMarginRequirement": 0.03,
+  "netSize": 2.11,
+  "openSize": 2.11,
+  "realizedPnl": -0.17876023,
+  "shortOrderSize": 0.0,
+  "side": "buy",
+  "size": 2.11,
+  "unrealizedPnl": 0.0
+}}
+
+            {[
   {
-    "account": 981600,
-    "symbol": "XBTM19",
-    "currency": "XBt",
-    "underlying": "XBT",
-    "quoteCurrency": "USD",
-    "commission": 0.00075,
-    "initMarginReq": 0.01,
-    "maintMarginReq": 0.005,
-    "riskLimit": 5000000000,
-    "leverage": 100,
-    "crossMargin": true,
-    "deleveragePercentile": null,
-    "rebalancedPnl": 0,
-    "prevRealisedPnl": 0,
-    "prevUnrealisedPnl": 0,
-    "prevClosePrice": 12130.48,
-    "openingTimestamp": "2019-06-28T10:00:00.000Z",
-    "openingQty": 0,
-    "openingCost": 0,
-    "openingComm": 0,
-    "openOrderBuyQty": 0,
-    "openOrderBuyCost": 0,
-    "openOrderBuyPremium": 0,
-    "openOrderSellQty": 0,
-    "openOrderSellCost": 0,
-    "openOrderSellPremium": 0,
-    "execBuyQty": 21,
-    "execBuyCost": 178836,
-    "execSellQty": 0,
-    "execSellCost": 0,
-    "execQty": 21,
-    "execCost": -178836,
-    "execComm": 134,
-    "currentTimestamp": "2019-06-28T10:50:21.081Z",
-    "currentQty": 21,
-    "currentCost": -178836,
-    "currentComm": 134,
-    "realisedCost": 0,
-    "unrealisedCost": -178836,
-    "grossOpenCost": 0,
-    "grossOpenPremium": 0,
-    "grossExecCost": 178836,
-    "isOpen": true,
-    "markPrice": 11743.77,
-    "markValue": -178815,
-    "riskValue": 178815,
-    "homeNotional": 0.00178815,
-    "foreignNotional": -21,
-    "posState": "",
-    "posCost": -178836,
-    "posCost2": -178836,
-    "posCross": 0,
-    "posInit": 1789,
-    "posComm": 136,
-    "posLoss": 0,
-    "posMargin": 1925,
-    "posMaint": 1031,
-    "posAllowance": 0,
-    "taxableMargin": 0,
-    "initMargin": 0,
-    "maintMargin": 1946,
-    "sessionMargin": 0,
-    "targetExcessMargin": 0,
-    "varMargin": 0,
-    "realisedGrossPnl": 0,
-    "realisedTax": 0,
-    "realisedPnl": -134,
-    "unrealisedGrossPnl": 21,
-    "longBankrupt": 0,
-    "shortBankrupt": 0,
-    "taxBase": 0,
-    "indicativeTaxRate": null,
-    "indicativeTax": 0,
-    "unrealisedTax": 0,
-    "unrealisedPnl": 21,
-    "unrealisedPnlPcnt": 0.0001,
-    "unrealisedRoePcnt": 0.0117,
-    "simpleQty": null,
-    "simpleCost": null,
-    "simpleValue": null,
-    "simplePnl": null,
-    "simplePnlPcnt": null,
-    "avgCostPrice": 11742.5,
-    "avgEntryPrice": 11742.5,
-    "breakEvenPrice": 11752.5,
-    "marginCallPrice": 2086,
-    "liquidationPrice": 2086,
-    "bankruptPrice": 2084,
-    "timestamp": "2019-06-28T10:50:21.081Z",
-    "lastPrice": 11743.77,
-    "lastValue": -178815
+    "collateralUsed": 0.0,
+    "cost": 0.0,
+    "entryPrice": null,
+    "estimatedLiquidationPrice": null,
+    "future": "ETH-PERP",
+    "initialMarginRequirement": 0.1,
+    "longOrderSize": 0.0,
+    "maintenanceMarginRequirement": 0.03,
+    "netSize": 0.0,
+    "openSize": 0.0,
+    "realizedPnl": -1.01902667,
+    "shortOrderSize": 0.0,
+    "side": "buy",
+    "size": 0.0,
+    "unrealizedPnl": 0.0
+  },
+  {
+    "collateralUsed": 89.23365,
+    "cost": 892.34453103,
+    "entryPrice": 1.0015090135016835,
+    "estimatedLiquidationPrice": 0.70704042966209524,
+    "future": "USDT-PERP",
+    "initialMarginRequirement": 0.1,
+    "longOrderSize": 0.0,
+    "maintenanceMarginRequirement": 0.03,
+    "netSize": 891.0,
+    "openSize": 891.0,
+    "realizedPnl": -0.74205564,
+    "shortOrderSize": 1774.0,
+    "side": "buy",
+    "size": 891.0,
+    "unrealizedPnl": -0.00803103
   }
-]*/
+]}
+*/
             ExchangeMarginPositionResult poitionR = null;
             var payload = await GetNoncePayloadAsync();
-            JToken token = await MakeJsonRequestAsync<JToken>($"/position", BaseUrl, payload);
+            //payload["showAvgPrice"] = true;
+            JToken token = await MakeJsonRequestAsync<JToken>($"/positions", BaseUrl, payload,"GET");
             foreach (JToken position in token)
             {
-                if (position["symbol"].ToStringInvariant().Equals(marketSymbol))
+                if (position["future"].ToStringInvariant().Equals(marketSymbol))
                 {
                     poitionR = new ExchangeMarginPositionResult()
                     {
                         MarketSymbol = marketSymbol,
-                        Amount = position["currentQty"].ConvertInvariant<decimal>(),
-                        LiquidationPrice = position["liquidationPrice"].ConvertInvariant<decimal>(),
-                        BasePrice = position["avgCostPrice"].ConvertInvariant<decimal>(),
+                        Amount = position["netSize"].ConvertInvariant<decimal>(),
+                        LiquidationPrice = position["estimatedLiquidationPrice"].ConvertInvariant<decimal>(),
+                        
                     };
+                    poitionR.BasePrice = Math.Abs(position["cost"].ConvertInvariant<decimal>() / poitionR.Amount);
+
                 }
             }
             return poitionR;
         }
         private void AddOrderToPayload(ExchangeOrderRequest order, Dictionary<string, object> payload)
         {
-            payload["symbol"] = order.MarketSymbol;
-            payload["ordType"] = order.OrderType.ToStringInvariant();
-            payload["side"] = order.IsBuy ? "Buy" : "Sell";
-            payload["orderQty"] = order.Amount;
+            payload["market"] = order.MarketSymbol;
+            payload["type"] = order.OrderType.ToStringLowerInvariant();
+            payload["side"] = order.IsBuy ? "buy" : "sell";
+            payload["size"] = order.Amount;
             if (order.Price != 0)
                 payload["price"] = order.Price;
             if (order.StopPrice != 0)
                 payload["stopPx"] = order.StopPrice;
             //payload["displayQty"] = 0;//隐藏订单
-            if (order.ExtraParameters.TryGetValue("execInst", out var execInst))
-            {
-                payload["execInst"] = execInst;
-            }
-            if (order.ExtraParameters.TryGetValue("orderID", out var orderID))
-            {
-                payload["orderID"] = orderID;
-            }
-           
+            payload["postOnly"] = true;//限价只挂单
+            //payload["ioc"] = true;//值全部成交
+            
+            //if (order.ExtraParameters.TryGetValue("execInst", out var execInst))
+            //{
+            //    payload["execInst"] = execInst;
+            //}
+//             if (order.ExtraParameters.TryGetValue("orderID", out var orderID))
+//             {
+//                 payload["clientId"] = orderID;
+//             }else
+            
+            payload["clientId"] = GetClinetOrderID();
+            
+
         }
 
         private ExchangeOrderResult ParseOrder(JToken token)
         {
             /*
-{[
-  {
-    "orderID": "b7b8518a-c0d8-028d-bb6e-d843f8f723a3",
-    "clOrdID": "",
-    "clOrdLinkID": "",
-    "account": 93592,
-    "symbol": "XBTUSD",
-    "side": "Buy",
-    "simpleOrderQty": null,
-    "orderQty": 1,
-    "price": 5500,
-    "displayQty": null,
-    "stopPx": null,
-    "pegOffsetValue": null,
-    "pegPriceType": "",
-    "currency": "USD",
-    "settlCurrency": "XBt",
-    "ordType": "Limit",
-    "timeInForce": "GoodTillCancel",
-    "execInst": "ParticipateDoNotInitiate",
-    "contingencyType": "",
-    "exDestination": "XBME",
-    "ordStatus": "Canceled",
-    "triggered": "",
-    "workingIndicator": false,
-    "ordRejReason": "",
-    "simpleLeavesQty": 0,
-    "leavesQty": 0,
-    "simpleCumQty": 0,
-    "cumQty": 0,
-    "avgPx": null,
-    "multiLegReportingType": "SingleSecurity",
-    "text": "Canceled: Canceled via API.\nSubmission from testnet.bitmex.com",
-    "transactTime": "2018-07-08T09:20:39.428Z",
-    "timestamp": "2018-07-08T11:35:05.334Z"
+{
+  "success": true,
+  "result": {
+    "createdAt": "2019-03-05T09:56:55.728933+00:00",
+    "filledSize": 0,
+    "future": "XRP-PERP",
+    "id": 9596912,
+    "market": "XRP-PERP",
+    "price": 0.306525,
+    "remainingSize": 31431,
+    "side": "sell",
+    "size": 31431,
+    "status": "open",
+    "type": "limit",
+    "reduceOnly": false,
+    "ioc": false,
+    "postOnly": false,
+    "clientId": null,
   }
-]}
+}
             */
 
-            //             var marketSymbol = token["symbol"].ToStringInvariant();
-            //             string m_symbol = marketSymbol+"_" + token["orderID"].ToStringInvariant();
-            //             JToken old;
-            //             
-            //             if (!orderPairs.TryGetValue(m_symbol, out old))
-            //             {
-            //                 orderPairs[m_symbol] = token;
-            //             }
-            //             else
-            //             {
-            //                 foreach (var item in token)
-            //                 {
-            //                     if (item is JProperty)
-            //                     {
-            //                         var jp = (JProperty)item;
-            //                         old[jp.Name] = jp.Value;
-            //                     }
-            //                 }
-            //                 token = old;
-            //             }
-
-            // 
+            Logger.Debug("ParseOrder:"+ token.ToString());
             ExchangeOrderResult fullOrder;
-            lock(fullOrders)
-            { 
-                bool had = fullOrders.TryGetValue(token["orderID"].ToStringInvariant(), out fullOrder);
-
-
-                ExchangeOrderResult result = new ExchangeOrderResult
+            lock (fullOrders)
+            {
+                bool had = fullOrders.TryGetValue(token["clientId"].ToStringInvariant(), out fullOrder);
+                ExchangeOrderResult result = new ExchangeOrderResult()
                 {
-                    Amount = token["orderQty"].ConvertInvariant<decimal>(),
-                    AmountFilled = token["cumQty"].ConvertInvariant<decimal>(),
-                    Price = token["price"].ConvertInvariant<decimal>(),
-                    IsBuy = token["side"].ToStringInvariant().EqualsWithOption("Buy"),
-                    OrderDate = token["transactTime"].ConvertInvariant<DateTime>(),
-                    OrderId = token["orderID"].ToStringInvariant(),
-                    MarketSymbol = token["symbol"].ToStringInvariant(),
-                    AveragePrice = token["avgPx"].ConvertInvariant<decimal>(),
-                    StopPrice = token["stopPx"].ConvertInvariant<decimal>(),
-                };
+                    Amount = token["size"].ConvertInvariant<decimal>(),
+                     AmountFilled = token["filledSize"].ConvertInvariant<decimal>(),
+                     Price = token["price"].ConvertInvariant<decimal>(),
+                     IsBuy = token["side"].ToStringInvariant().EqualsWithOption("buy"),
+                     OrderDate = token["createdAt"].ConvertInvariant<DateTime>(),
+                    OrderId = token["clientId"].ToStringInvariant(),
+                     MarketSymbol = token["market"].ToStringInvariant(),
+                     AveragePrice = token["price"].ConvertInvariant<decimal>(),
+                     //StopPrice = token["stopPx"].ConvertInvariant<decimal>(),
+                 };
+
+                if (token["avgFillPrice"] !=null)
+                {
+                    result.AveragePrice = token["avgFillPrice"].ConvertInvariant<decimal>();
+                }
                 if (had)
                 {
                     result.IsBuy = fullOrder.IsBuy;
@@ -1041,7 +1055,7 @@ namespace ExchangeSharp
 
                 if (!token["side"].ToStringInvariant().EqualsWithOption(string.Empty))
                 {
-                    result.IsBuy = token["side"].ToStringInvariant().EqualsWithOption("Buy");
+                    result.IsBuy = token["side"].ToStringInvariant().EqualsWithOption("buy");
                     fullOrder.IsBuy = result.IsBuy;
                 }
 
@@ -1049,30 +1063,52 @@ namespace ExchangeSharp
                 // http://www.onixs.biz/fix-dictionary/5.0.SP2/tagNum_39.html
                 if (result.Result != ExchangeAPIOrderResult.Filled)//改为成交后不修改成其他状态
                 {
-
-                    switch (token["ordStatus"].ToStringInvariant())
+                    switch (token["status"].ToStringInvariant())
                     {
-                        case "New":
+                        case "new"://部分成交的时候 也是 在 new 状态
                             result.Result = ExchangeAPIOrderResult.Pending;
                             Logger.Info("1ExchangeAPIOrderResult.Pending:" + token.ToString());
-                            if (token["triggered"].ToStringInvariant().Equals("StopOrderTriggered"))
+//                             if (token["triggered"].ToStringInvariant().Equals("StopOrderTriggered"))
+//                             {
+//                                 result.Result = ExchangeAPIOrderResult.TriggerPending;
+//                             }
+
+                            if (result.AmountFilled == 0)
                             {
-                                result.Result = ExchangeAPIOrderResult.TriggerPending;
+                                result.Result = ExchangeAPIOrderResult.Pending;
+                            }
+                            else if (result.AmountFilled > 0)
+                            {
+                                result.Result = ExchangeAPIOrderResult.FilledPartially;
+                            }
+                            else if (result.Amount == result.AmountFilled)
+                            {
+                                result.Result = ExchangeAPIOrderResult.Filled;
+                            }
+                            break;
+                        case "open":
+                            if (result.AmountFilled == 0)
+                            {
+                                result.Result = ExchangeAPIOrderResult.Pending;
+                            }
+                            else if ( result.AmountFilled>0)
+                            {
+                                result.Result = ExchangeAPIOrderResult.FilledPartially;
+                            }
+                            else if (result.Amount == result.AmountFilled)
+                            {
+                                result.Result = ExchangeAPIOrderResult.Filled;
                             }
 
+                            Logger.Info("2ExchangeAPIOrderResult" + result.Result + ":" + token.ToString());
+                            break;
+                        case "closed":
+                            if (result.Amount == result.AmountFilled)
 
-                            break;
-                        case "PartiallyFilled":
-                            result.Result = ExchangeAPIOrderResult.FilledPartially;
-                            Logger.Info("2ExchangeAPIOrderResult.FilledPartially:" + token.ToString());
-                            break;
-                        case "Filled":
-                            result.Result = ExchangeAPIOrderResult.Filled;
-                            Logger.Info("3ExchangeAPIOrderResult.Filled:" + token.ToString());
-                            break;
-                        case "Canceled":
-                            result.Result = ExchangeAPIOrderResult.Canceled;
-                            Logger.Info("4ExchangeAPIOrderResult.Canceled:" + token.ToString());
+                                result.Result = ExchangeAPIOrderResult.Filled;
+                            else
+                                result.Result = ExchangeAPIOrderResult.Canceled;
+                            Logger.Info("4ExchangeAPIOrderResult:" + result.Result + ":" + token.ToString());
                             break;
                         default:
                             result.Result = ExchangeAPIOrderResult.Error;
@@ -1080,14 +1116,14 @@ namespace ExchangeSharp
                             break;
                     }
 
-                    if (token["triggered"]!=null)
+                    if (token["triggered"] != null)
                     {
                         if (token["triggered"].ToStringInvariant().Equals("StopOrderTriggered"))
                         {
                             result.Result = ExchangeAPIOrderResult.TriggerPending;
                         }
                     }
-                   
+
                 }
 
                 //if (had)
@@ -1134,7 +1170,7 @@ namespace ExchangeSharp
                 {
                     fullOrder = result;
                 }
-                if(result==null)
+                if (result == null)
                 {
                     Logger.Error("ExchangeAPIOrderResult:" + token.ToString());
                     return fullOrder;
