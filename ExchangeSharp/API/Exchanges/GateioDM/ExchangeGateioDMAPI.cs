@@ -431,12 +431,24 @@ namespace ExchangeSharp
             return returnResult;
         }
 
-        public async Task<List<ExchangeOrderResult>> onGetFutureOrders(string marketSymbol,string orderStatus="open")
+        protected override async Task<Dictionary<string, decimal>> OnGetFeesAsync()
+        {
+            Dictionary<string, decimal> feeDic = new Dictionary<string, decimal>();
+            Dictionary<string, object> payload = new Dictionary<string, object>();
+            string addUrl = string.Format(" /futures/contracts");
+            JToken token = await MakeJsonRequestAsync<JToken>(addUrl, BaseUrl, payload, "GET");
+            foreach(var feeTmp in token)
+            {
+                feeDic[feeTmp["name"].ToString()] = feeTmp["funding_rate"].ConvertInvariant<decimal>();
+            }
+            return feeDic;
+        }
+        protected override async Task<IEnumerable<ExchangeOrderResult>> OnGetOpenOrderDetailsAsync(string marketSymbol)
         {
             GetSymbolAndContractCode(marketSymbol, out string symbol, out string contractCode);
             Dictionary<string, object> payload = new Dictionary<string, object>();
             string addUrl = string.Format("/futures/{0}/orders", contractCode.ToLower(), contractCode.ToLower());
-            addUrl += "?" + string.Format("contract={0}&status={1}", marketSymbol,orderStatus);
+            addUrl += "?" + string.Format("contract={0}&status=open", marketSymbol);
             JToken token = await MakeJsonRequestAsync<JToken>(addUrl, BaseUrl, payload, "GET");
             List<ExchangeOrderResult>  ordersRet = new List<ExchangeOrderResult>();
             foreach(var orderS in token)
