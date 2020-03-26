@@ -203,6 +203,7 @@ namespace ExchangeSharp
                     IsActive = marketSymbolToken["state"].ToStringInvariant().EqualsWithOption("Open"),
                     QuoteCurrency = marketSymbolToken["quoteCurrency"].ToStringUpperInvariant(),
                     BaseCurrency = marketSymbolToken["underlying"].ToStringUpperInvariant(),
+                    FundingRate = marketSymbolToken["fundingRate"].ConvertInvariant<decimal>()
                 };
 
                 try

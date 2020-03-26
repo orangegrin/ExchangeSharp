@@ -431,17 +431,61 @@ namespace ExchangeSharp
             return returnResult;
         }
 
-        protected override async Task<Dictionary<string, decimal>> OnGetFeesAsync()
+        protected override async Task<IEnumerable<ExchangeMarket>> OnGetMarketSymbolsMetadataAsync()
         {
-            Dictionary<string, decimal> feeDic = new Dictionary<string, decimal>();
+            /*
+             * 
+             * [
+                      {
+                        "name": "BTC_USD",
+                        "type": "inverse",
+                        "quanto_multiplier": "0",
+                        "mark_type": "index",
+                        "last_price": "4123",
+                        "mark_price": "4121.41",
+                        "index_price": "4121.5",
+                        "funding_next_apply": 1546588800,
+                        "funding_rate": "0.000333",
+                        "funding_interval": 28800,
+                        "funding_offset": 0,
+                        "interest_rate": "0.001",
+                        "order_price_round": "0.5",
+                        "mark_price_round": "0.01",
+                        "leverage_min": "1",
+                        "leverage_max": "100",
+                        "maintenance_rate": "0.005",
+                        "risk_limit_base": "10",
+                        "risk_limit_step": "10",
+                        "risk_limit_max": "50",
+                        "maker_fee_rate": "-0.00025",
+                        "taker_fee_rate": "0.00075",
+                        "order_price_deviate": "1",
+                        "order_size_min": 1,
+                        "order_size_max": 1000000,
+                        "orders_limit": 50,
+                        "orderbook_id": 39635902,
+                        "trade_id": 6935987,
+                        "trade_size": 1992012909,
+                        "position_size": 4323221,
+                        "config_change_time": 1547540148
+                      }
+                    ]
+             * 
+             * */
+            List<ExchangeMarket> feeDics = new List<ExchangeMarket>();
             Dictionary<string, object> payload = new Dictionary<string, object>();
             string addUrl = string.Format(" /futures/contracts");
             JToken token = await MakeJsonRequestAsync<JToken>(addUrl, BaseUrl, payload, "GET");
             foreach(var feeTmp in token)
             {
-                feeDic[feeTmp["name"].ToString()] = feeTmp["funding_rate"].ConvertInvariant<decimal>();
+                ExchangeMarket em = new ExchangeMarket() { 
+                    MarketSymbol = feeTmp["name"].ToString(),
+                    FundingRate = feeTmp["funding_rate"].ConvertInvariant<decimal>()
+            };
+
+                feeDics.Add(em);
             }
-            return feeDic;
+            return feeDics;
         }
         protected override async Task<IEnumerable<ExchangeOrderResult>> OnGetOpenOrderDetailsAsync(string marketSymbol)
         {

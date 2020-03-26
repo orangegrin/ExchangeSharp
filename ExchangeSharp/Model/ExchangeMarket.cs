@@ -37,6 +37,11 @@ namespace ExchangeSharp
         /// <summary>The maximum size of the trade in the unit of "BaseCurrency".</summary>
         public decimal MaxTradeSize { get; set; } = decimal.MaxValue;
 
+        
+        /// <summary>The FundingFee of the symbolMarket.</summary>
+        public decimal FundingRate { get; set; }
+
+
         /// <summary>The minimum size of the trade in the unit of "QuoteCurrency". To determine an order's
         /// trade size in terms of the Quote Currency, you need to calculate: price * quantity
         /// NOTE: Not all exchanges provide this information</summary>
