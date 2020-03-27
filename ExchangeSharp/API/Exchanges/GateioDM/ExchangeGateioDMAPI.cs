@@ -482,7 +482,6 @@ namespace ExchangeSharp
                     MarketSymbol = feeTmp["name"].ToString(),
                     FundingRate = feeTmp["funding_rate"].ConvertInvariant<decimal>()
             };
-
                 feeDics.Add(em);
             }
             return feeDics;
@@ -545,7 +544,7 @@ namespace ExchangeSharp
         {
             GetSymbolAndContractCode(marketSymbol, out string symbol, out string contractCode);
             Dictionary<string, object> payload = new Dictionary<string, object>();
-            string addUrl = string.Format("/futures/{0}/price_orders}", contractCode.ToLower(), orderId);
+            string addUrl = string.Format("/futures/{0}/price_orders}", contractCode.ToLower());
             addUrl +="?"+ string.Format("contract={0}", marketSymbol);
             JToken token = await MakeJsonRequestAsync<JToken>(addUrl, BaseUrl, payload, "DELETE");
         }
