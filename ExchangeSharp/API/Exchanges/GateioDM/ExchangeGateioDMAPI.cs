@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 
 using Newtonsoft.Json;
 using System.Security.Cryptography;
+using System.Threading;
 
 namespace ExchangeSharp
 {
@@ -17,7 +18,7 @@ namespace ExchangeSharp
         public override string BaseUrl { get; set; } = "https://fx-api-testnet.gateio.ws";
         public string BaseUrlV1 { get; set; } = "https://fx-api-testnet.gateio.ws/api/v4";
 
-        public override string BaseUrlWebSocket { get; set; } = "wss://fx-ws.gateio.ws/v4/ws";
+        public override string BaseUrlWebSocket { get; set; } = "wss://fx-ws-testnet.gateio.ws/v4/ws";//"wss://fx-ws.gateio.ws/v4/ws";
         public string PrivateUrlV1 { get; set; } = "https://api.GateioDM.com/api/v1";
 
 
@@ -78,6 +79,7 @@ namespace ExchangeSharp
         #region Websocket API
         protected override IWebSocket OnGetOrderBookWebSocket(Action<ExchangeOrderBook> callback, int maxCount = 20, params string[] marketSymbols)
         {
+            
             IWebSocket web= ConnectWebSocket(string.Empty, async (_socket, msg) =>
             {
                 /*
@@ -217,8 +219,19 @@ namespace ExchangeSharp
             return web;
         }
 
-        protected override IWebSocket OnGetOrderDetailsWebSocket(Action<ExchangeOrderResult> callback)
+
+
+        protected override IWebSocket OnGetOrderDetailsWebSocketBySymbols(Action<ExchangeOrderResult> callback,params string[] marketSymbols)
         {
+            Timer pingTimer = null;
+            string _channel = "futures.orders";
+            string _doevent = "subscribe";
+            if (marketSymbols == null && marketSymbols.Length<2)
+            {
+                throw new Exception("OnGetOrderDetailsWebSocketBySymbols 参数格式错误!!!!");
+            }
+            string _id = marketSymbols[0];
+            string _symbols = marketSymbols[1];
             IWebSocket web = ConnectWebSocket(string.Empty, async (_socket, msg) =>
             {
 
@@ -273,35 +286,109 @@ namespace ExchangeSharp
                         ],
                     }
                  */
+                var str = msg.ToStringFromUTF8();
+                JToken token = JToken.Parse(str);
+                //Logger.Debug(token.ToString());
+                if (token["result"] == null)
+                {
+                    return;
+                }
+                else if (token["channel"] != null)
+                {
+                    if (token["channel"].ToString().Equals("futures.pong"))
+                        return;
+                }
+                var _event = token["event"].ToString();
+                if (_event.Equals("subscribe"))
+                {
+                    if (pingTimer == null)
+                    {
+                        Dictionary<string, object> authPayload = new Dictionary<string, object>
+                        {
+                            { "time",Convert.ToInt32(await GenerateNonceAsync())},
+                            { "channel","futures.ping" },
 
-                callback(order);
+                        };
+                        pingTimer = new Timer(callback: async s => await _socket.SendMessageAsync(authPayload),
+                            state: null, dueTime: 0, period: 15000); // send a ping every 15 seconds
+                    }
+                    return;
+                }
+                else if (_event.Equals("update"))
+                {
+                    var result = token["result"];
+                    JArray data = result as JArray;
+                    foreach (var t in data)
+                    {
+                        var marketSymbol = t["contract"].ToStringInvariant();
+                        var order = ParseOrder(JObject.Parse(t.ToString()));
+                        callback(order);
+                        //callback(new KeyValuePair<string, ExchangeTrade>(marketSymbol, t.ParseTrade("size", "price", "side", "timestamp", TimestampType.Iso8601, "trdMatchID")));
+
+                    }
+                }
             }, async (_socket) =>
             {
-                var payloadJSON = GenerateAuthPayloadJson();
+                var payloadJSON = GenerateAuthPayloadJson(_channel, _doevent, new object[] { _id, _symbols });//string.Format(@"[""{0}"", ""{1}""]", _id, _symbols));
+                Logger.Debug(payloadJSON.Result.ToString());
                 await _socket.SendMessageAsync(payloadJSON.Result);
+            }, async (_socket) =>
+            {
+                pingTimer.Dispose();
+                pingTimer = null;
             });
             return web;
         }
 
-        private async Task<string> GenerateAuthPayloadJson()
+        private async Task<string> GenerateAuthPayloadJson(string _channel,string _event, object _payload)
         {
+            /*
+            var nonce = payload["nonce"].ConvertInvariant<long>();
+            payload.Remove("nonce");
+
+            var strPayload = CryptoUtility.GetJsonForPayload(payload, false);
+          
+            string tStr = CryptoUtility.GetSHA512HashFromString(strPayload);
+            //str = "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e";
+            long ts = nonce;
+            string pre = request.RequestUri.AbsolutePath.Split("?".ToCharArray(), StringSplitOptions.None)[0];
+            var sign = $"{request.Method}\n{pre}\n{request.RequestUri.Query.Replace("?", "")}\n{tStr}\n{ts}";
+            //var sign = $"{request.Method}\n{request.RequestUri.AbsolutePath}\n{msg}\n{tStr}\n{nonce}";
+            string signature = CryptoUtility.SHA512Sign(sign, CryptoUtility.ToUnsecureBytesUTF8(PrivateApiKey)).ToStringLowerInvariant();
+
+            string key = PublicApiKey.ToUnsecureString();
+            string ser = PrivateApiKey.ToUnsecureString();
+            request.AddHeader("Content-Type", "application/json");
+            request.AddHeader("Accept", "application/json");
+            request.AddHeader("KEY", PublicApiKey.ToUnsecureString());
+            request.AddHeader("SIGN", signature);
+            request.AddHeader("Timestamp", (ts).ToString());
+            */
+
+
             long id = new Random().Next(1, 9999);
-            long nonce = (long)CryptoUtility.UtcNow.UnixTimestampFromDateTimeMilliseconds();
+            long nonce = Convert.ToInt32(await GenerateNonceAsync()) ;
+
+            string _time = nonce.ToString();
+            var sign = $"channel={_channel}&event={_event}&time={_time}";
             string nonceStr = nonce.ToString();
             string secretKey = PrivateApiKey.ToUnsecureString();
             //h = (base64.b64encode(hmac.new (secret_key.encode('utf-8'), message.encode('utf-8'), hashlib.sha512).digest())).decode();
-            string signature = CryptoUtility.SHA512Sign(secretKey, nonceStr).ToStringLowerInvariant();
+
+            string signature = CryptoUtility.SHA512Sign(sign, secretKey).ToStringLowerInvariant();
             //{ 'id' : id, 'method' : 'server.sign' , 'params' : [self.__apiKey, signature, nonce]
             Dictionary<string, object> authPayload = new Dictionary<string, object>
             {
-                {"id",id },
-                {"method","server.sign" },
-                {"params",new List<object>(){PublicApiKey.ToUnsecureString(), signature, nonce } },
+                { "time",nonce },
+                { "channel",_channel },
+                { "event",_event },
+                { "payload",_payload },
+
+                { "auth", new { method = "api_key" ,KEY = PublicApiKey.ToUnsecureString() ,SIGN = signature } }
             };
             return CryptoUtility.GetJsonForPayload(authPayload);
             
         }
-    
     #endregion
 
     public override async Task<ExchangeOrderResult> PlaceOrderAsync(ExchangeOrderRequest order)
@@ -865,7 +952,7 @@ namespace ExchangeSharp
                 payload["execInst"] = execInst;
             }
         }
-        private ExchangeOrderResult ParseOrder(JObject token,ExchangeOrderRequest orderRequest)
+        private ExchangeOrderResult ParseOrder(JObject token,ExchangeOrderRequest orderRequest=null)
         {
             /*
               {
