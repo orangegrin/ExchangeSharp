@@ -62,7 +62,7 @@ namespace ExchangeSharp
             string[] strAry = new string[2];
             string[] splitAry = marketSymbol.Split(MarketSymbolSeparator.ToCharArray(), StringSplitOptions.None);
             symbol = marketSymbol;
-            contractCode =splitAry[0];
+            contractCode =splitAry[0].ToLower();
         }
         //1min, 5min, 15min, 30min, 60min,4hour,1day, 1mon
         public override string PeriodSecondsToString(int seconds)
@@ -473,15 +473,16 @@ namespace ExchangeSharp
              * 
              * */
             List<ExchangeMarket> feeDics = new List<ExchangeMarket>();
-            Dictionary<string, object> payload = new Dictionary<string, object>();
-            string addUrl = string.Format(" /futures/contracts");
-            JToken token = await MakeJsonRequestAsync<JToken>(addUrl, BaseUrl, payload, "GET");
+            Dictionary<string, object> payload = await GetNoncePayloadAsync();
+            string addUrl = string.Format("/futures/contracts");
+            JToken token = await MakeJsonRequestAsync<JToken>(addUrl, BaseUrlV1, payload, "GET");
             foreach(var feeTmp in token)
             {
-                ExchangeMarket em = new ExchangeMarket() { 
+                ExchangeMarket em = new ExchangeMarket()
+                { 
                     MarketSymbol = feeTmp["name"].ToString(),
                     FundingRate = feeTmp["funding_rate"].ConvertInvariant<decimal>()
-            };
+                };
                 feeDics.Add(em);
             }
             return feeDics;
@@ -489,17 +490,14 @@ namespace ExchangeSharp
         protected override async Task<IEnumerable<ExchangeOrderResult>> OnGetOpenOrderDetailsAsync(string marketSymbol)
         {
             GetSymbolAndContractCode(marketSymbol, out string symbol, out string contractCode);
-            Dictionary<string, object> payload = new Dictionary<string, object>();
+            Dictionary<string, object> payload = await GetNoncePayloadAsync();
             string addUrl = string.Format("/futures/{0}/orders", contractCode.ToLower(), contractCode.ToLower());
-            addUrl += "?" + string.Format("contract={0}&status=open", marketSymbol);
-            JToken token = await MakeJsonRequestAsync<JToken>(addUrl, BaseUrl, payload, "GET");
+            addUrl += "?" + string.Format("contract={0}&status=open", marketSymbol.ToUpper());
+            JArray token = await MakeJsonRequestAsync<JArray>(addUrl, BaseUrlV1, payload, "GET");
             List<ExchangeOrderResult>  ordersRet = new List<ExchangeOrderResult>();
             foreach(var orderS in token)
             {
-                ExchangeOrderResult tmpo = new ExchangeOrderResult()
-                {
-
-                };
+                ExchangeOrderResult tmpo = ParseOrder(JsonConvert.DeserializeObject<JObject>(orderS.ToString()), new ExchangeOrderRequest());
                 ordersRet.Add(tmpo);
             }
             return ordersRet;
@@ -507,46 +505,50 @@ namespace ExchangeSharp
 
         protected override async Task OnCancelOrderAsync(string orderId, string marketSymbol)
         {
+            if (string.IsNullOrEmpty(marketSymbol))
+            {
+                throw new Exception("marketSymbol can not be null!!");
+            }
             GetSymbolAndContractCode(marketSymbol, out string symbol, out string contractCode);
-            Dictionary<string, object> payload = new Dictionary<string, object>();
+            Dictionary<string, object> payload = await GetNoncePayloadAsync();
             string addUrl = string.Format("/futures/{0}/orders/{1}", contractCode.ToLower(), orderId);
-            JToken token = await MakeJsonRequestAsync<JToken>(addUrl, BaseUrl, payload, "DELETE");
+            JToken token = await MakeJsonRequestAsync<JToken>(addUrl, BaseUrlV1, payload, "DELETE");
         }
 
         public async Task OnCancelAllOrderAsync( string marketSymbol)
         {
             GetSymbolAndContractCode(marketSymbol, out string symbol, out string contractCode);
-            Dictionary<string, object> payload = new Dictionary<string, object>();
+            Dictionary<string, object> payload = await GetNoncePayloadAsync();
             string addUrl = string.Format("/futures/{0}/orders", contractCode.ToLower());
             addUrl += "?" + string.Format("contract={0}", marketSymbol);
-            JToken token = await MakeJsonRequestAsync<JToken>(addUrl, BaseUrl, payload, "DELETE");
+            JToken token = await MakeJsonRequestAsync<JToken>(addUrl, BaseUrlV1, payload, "DELETE");
         }
 
         public override async Task<decimal> GetWalletSummaryAsync(string marketSymbol)
         {
             GetSymbolAndContractCode(marketSymbol, out string symbol, out string contractCode);
-            Dictionary<string, object> payload = new Dictionary<string, object>();
+            Dictionary<string, object> payload = await GetNoncePayloadAsync();
             string addUrl = string.Format("/futures/{0}/accounts", contractCode.ToLower());
             
-            JToken token = await MakeJsonRequestAsync<JToken>(addUrl, BaseUrl, payload, "GET");
+            JToken token = await MakeJsonRequestAsync<JToken>(addUrl, BaseUrlV1, payload, "GET");
 
             return token["total"].ConvertInvariant<decimal>();
         }
         public async Task OnCancelPriceTrigerOrderAsync(string orderId, string marketSymbol)
         {
             GetSymbolAndContractCode(marketSymbol, out string symbol, out string contractCode);
-            Dictionary<string, object> payload = new Dictionary<string, object>();
+            Dictionary<string, object> payload = await GetNoncePayloadAsync();
             string addUrl = string.Format("/futures/{0}/price_orders/{1}", contractCode.ToLower(), orderId);
-            JToken token = await MakeJsonRequestAsync<JToken>(addUrl, BaseUrl, payload, "DELETE");
+            JToken token = await MakeJsonRequestAsync<JToken>(addUrl, BaseUrlV1, payload, "DELETE");
         }
 
         public async Task OnCancelAllPriceTrigerOrderAsync(string marketSymbol)
         {
             GetSymbolAndContractCode(marketSymbol, out string symbol, out string contractCode);
-            Dictionary<string, object> payload = new Dictionary<string, object>();
+            Dictionary<string, object> payload = await GetNoncePayloadAsync();
             string addUrl = string.Format("/futures/{0}/price_orders}", contractCode.ToLower());
             addUrl +="?"+ string.Format("contract={0}", marketSymbol);
-            JToken token = await MakeJsonRequestAsync<JToken>(addUrl, BaseUrl, payload, "DELETE");
+            JToken token = await MakeJsonRequestAsync<JToken>(addUrl, BaseUrlV1, payload, "DELETE");
         }
 
         private async Task<ExchangeOrderResult> m_OnPlaceOrderAsync(ExchangeOrderRequest order, bool isOpen)
@@ -559,7 +561,7 @@ namespace ExchangeSharp
             AddOrderToPayload(order, isOpen, payload);
            
 
-            JObject token = await MakeJsonRequestAsync<JObject>(addUrl, BaseUrl, payload, "POST");
+            JObject token = await MakeJsonRequestAsync<JObject>(addUrl, BaseUrlV1, payload, "POST");
  
             JObject jo = JsonConvert.DeserializeObject<JObject>(token.Root.ToString());
             return ParseOrder(jo, order);
@@ -614,7 +616,7 @@ namespace ExchangeSharp
              * 
              */
             GetSymbolAndContractCode(marketSymbol, out string symbol, out string contractCode);
-            Dictionary<string, object> payload = new Dictionary<string, object>();
+            Dictionary<string, object> payload = await GetNoncePayloadAsync();
             string addUrl = string.Format("/futures/{0}/positions/{1}", contractCode.ToLower(), marketSymbol);
             JObject token = await MakeJsonRequestAsync<JObject>(addUrl, BaseUrlV1, payload, "GET");
 
@@ -766,7 +768,11 @@ namespace ExchangeSharp
             payload["price"] = order.OrderType == OrderType.Limit ? order.Price.ToString() : "0";
             //payload["close"] = false;
             //payload["reduce_only"] = false;
-            //payload["tif"] = false;
+            if (order.OrderType == OrderType.Market)
+            {
+                payload["tif"] = "ioc";
+            }
+
             //payload["text"] = false;
             if (order.ExtraParameters.TryGetValue("execInst", out var execInst))
             {
@@ -776,22 +782,28 @@ namespace ExchangeSharp
         private ExchangeOrderResult ParseOrder(JObject token,ExchangeOrderRequest orderRequest)
         {
             /*
-                {[
-                  {
-                status	true	string	请求处理结果	"ok" , "error"
-                <list>(属性名称: errors)				
-                index	true	int	订单索引	
-                err_code	true	int	错误码	
-                err_msg	true	string	错误信息	
-                </list>				
-                <list>(属性名称: success)				
-                index	true	int	订单索引	
-                order_id	true	long	订单ID	
-                client_order_id	true	long	用户下单时填写的客户端订单ID，没填则不返回	
-                </list>				
-                ts
-                  }
-                ]}
+              {
+  "id": 15675394,
+  "user": 100000,
+  "contract": "BTC_USD",
+  "create_time": 1546569968,
+  "size": 6024,
+  "iceberg": 0,
+  "left": 6024,
+  "price": "3765",
+  "fill_price": "0",
+  "mkfr": "-0.00025",
+  "tkfr": "0.00075",
+  "tif": "gtc",
+  "refu": 0,
+  "is_reduce_only": false,
+  "is_close": false,
+  "is_liq": false,
+  "text": "t-my-custom-id",
+  "status": "finished",
+  "finish_time": 1514764900,
+  "finish_as": "cancelled"
+}
             */
             ExchangeOrderResult result = new ExchangeOrderResult();
             if (token["status"].ToString().Equals("finished"))
@@ -799,8 +811,8 @@ namespace ExchangeSharp
                 decimal size = token["size"].ConvertInvariant<decimal>();
                 result = new ExchangeOrderResult
                 {
-                    Amount = size,
-                    AmountFilled = size - token["left"].ConvertInvariant<decimal>(),
+                    Amount = Math.Abs(size),
+                    AmountFilled = Math.Abs(token["left"].ConvertInvariant<decimal>()),
                     Price = token["price"].ConvertInvariant<decimal>(),
                     IsBuy = size >=0?true:false,
                     OrderDate = new DateTime( token["create_time"].ConvertInvariant<long>()),
@@ -915,7 +927,7 @@ namespace ExchangeSharp
             string periodString = PeriodSecondsToString(periodSeconds);
             string url = $"/market/history/kline?period={periodString}&size={size}&symbol={marketSymbol}";
             
-            JToken allCandles = await MakeJsonRequestAsync<JToken>(url, BaseUrl, null);
+            JToken allCandles = await MakeJsonRequestAsync<JToken>(url, BaseUrlV1, null);
             foreach (var token in allCandles)
             {
                 candles.Add(this.ParseCandle(token, marketSymbol, periodSeconds, "open", "high", "low", "close", "id", TimestampType.UnixSeconds, null, "vol"));
