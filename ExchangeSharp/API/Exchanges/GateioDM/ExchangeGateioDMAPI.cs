@@ -216,9 +216,95 @@ namespace ExchangeSharp
             });
             return web;
         }
-        #endregion
 
-        public override async Task<ExchangeOrderResult> PlaceOrderAsync(ExchangeOrderRequest order)
+        protected override IWebSocket OnGetOrderDetailsWebSocket(Action<ExchangeOrderResult> callback)
+        {
+            IWebSocket web = ConnectWebSocket(string.Empty, async (_socket, msg) =>
+            {
+
+                /*
+                 * https://gateio.io/docs/futures/ws/index.html?python#orders-api
+                   Send: {
+                        "time" : 123456,
+                        "channel" : "futures.orders",
+                        "event": "subscribe",
+                        "payload" : ["<user_id>", "BTC_USD"],
+                        "auth": {
+                                "method": "api_key",
+                                "KEY":"xxxx",
+                                "SIGN": "xxxx"
+                        }}  
+                   ret1:     
+                  {
+                        "time":1545459681,
+                        "channel":"futures.orders",
+                        "event":"subscribe",
+                        "error":null,
+                        "result":{"status":"success"}
+                    }
+
+                    ret2:
+                    {
+                        "channel":"futures.orders",
+                        "event":"update",
+                        "time":1541505434,
+                        "result":[{
+                                "contract":"BTC_USD",
+                                "user":"200XX"
+                                "create_time":1545141817,
+                                "fill_price":4120,
+                                "finish_as":"filled", //close reason
+                                "iceberg":0,
+                                "id":93282759,
+                                "is_reduce_only": false,
+                                "status": "finished",
+                                "is_close":0,
+                                "is_liq":0,
+                                "left":0,
+                                "mkfr":-0.00025,
+                                "price":4120,
+                                "refu":0,
+                                "size":10,
+                                "text":"-",
+                                "tif":"gtc",
+                                "finish_time": 1545640868,
+                                "tkfr":0.00075
+                            }
+                        ],
+                    }
+                 */
+
+                callback(order);
+            }, async (_socket) =>
+            {
+                var payloadJSON = GenerateAuthPayloadJson();
+                await _socket.SendMessageAsync(payloadJSON.Result);
+            });
+            return web;
+        }
+
+        private async Task<string> GenerateAuthPayloadJson()
+        {
+            long id = new Random().Next(1, 9999);
+            long nonce = (long)CryptoUtility.UtcNow.UnixTimestampFromDateTimeMilliseconds();
+            string nonceStr = nonce.ToString();
+            string secretKey = PrivateApiKey.ToUnsecureString();
+            //h = (base64.b64encode(hmac.new (secret_key.encode('utf-8'), message.encode('utf-8'), hashlib.sha512).digest())).decode();
+            string signature = CryptoUtility.SHA512Sign(secretKey, nonceStr).ToStringLowerInvariant();
+            //{ 'id' : id, 'method' : 'server.sign' , 'params' : [self.__apiKey, signature, nonce]
+            Dictionary<string, object> authPayload = new Dictionary<string, object>
+            {
+                {"id",id },
+                {"method","server.sign" },
+                {"params",new List<object>(){PublicApiKey.ToUnsecureString(), signature, nonce } },
+            };
+            return CryptoUtility.GetJsonForPayload(authPayload);
+            
+        }
+    
+    #endregion
+
+    public override async Task<ExchangeOrderResult> PlaceOrderAsync(ExchangeOrderRequest order)
         {
             // *NOTE* do not wrap in CacheMethodCall
             await new SynchronizationContextRemover();
