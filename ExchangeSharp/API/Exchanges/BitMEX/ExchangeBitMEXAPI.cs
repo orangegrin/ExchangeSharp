@@ -526,7 +526,15 @@ namespace ExchangeSharp
             });
         }
         #endregion
-
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="marketSymbol"></param>
+        /// <param name="periodSeconds"></param>
+        /// <param name="startDate"></param>
+        /// <param name="endDate"></param>
+        /// <param name="limit"></param>
+        /// <returns></returns>
         protected override async Task<IEnumerable<MarketCandle>> OnGetCandlesAsync(string marketSymbol, int periodSeconds, DateTime? startDate = null, DateTime? endDate = null, int? limit = null)
         {
             /*
@@ -534,7 +542,8 @@ namespace ExchangeSharp
 {"timestamp":"2017-01-01T00:00:00.000Z","symbol":"XBTUSD","open":968.29,"high":968.29,"low":968.29,"close":968.29,"trades":0,"volume":0,"vwap":null,"lastSize":null,"turnover":0,"homeNotional":0,"foreignNotional":0},
 {"timestamp":"2017-01-01T00:01:00.000Z","symbol":"XBTUSD","open":968.29,"high":968.76,"low":968.49,"close":968.7,"trades":17,"volume":12993,"vwap":968.72,"lastSize":2000,"turnover":1341256747,"homeNotional":13.412567469999997,"foreignNotional":12993},
              */
-
+            //limtit max =1000 ,if >1000 need paginate;
+            /*
             List<MarketCandle> candles = new List<MarketCandle>();
             string periodString = PeriodSecondsToString(periodSeconds);
             string url = $"/trade/bucketed?binSize={periodString}&partial=false&symbol={marketSymbol}&reverse=true" + marketSymbol;
@@ -558,9 +567,124 @@ namespace ExchangeSharp
             }
             candles.Reverse();
 
+
+            */
+            decimal maxDatas = 1000;
+            List<MarketCandle> candles = new List<MarketCandle>();
+            //GET /markets/{market_name}/candles?resolution={resolution}&limit={limit}&start_time={start_time}&end_time={end_time}
+            int daySeconds = 24 * 60 * 60;
+            if (startDate != null && endDate != null)
+            {
+
+                int duringDays = Convert.ToInt32(Math.Ceiling((endDate.Value - startDate.Value).TotalDays));
+                int allSeconds = daySeconds * duringDays;
+                decimal allNum = allSeconds / periodSeconds;
+                int times = Convert.ToInt32(Math.Ceiling(allNum / maxDatas));
+                int perTime = Convert.ToInt32(maxDatas * periodSeconds);
+                double startDateSeconds = startDate.Value.UnixTimestampFromDateTimeSeconds();
+
+                for (int i = 0; i < times; i++)
+                {
+                    if (i % 11 == 0)//避免超限制
+                        await Task.Delay(1000);
+                    double theStartDateSeconds = startDateSeconds + i * perTime;
+                    double theEndDateSeconds = theStartDateSeconds + perTime;
+
+
+                    string periodString = PeriodSecondsToString(periodSeconds);
+                    string url = $"/trade/bucketed?binSize={periodString}&partial=false&symbol={marketSymbol}&reverse=true" + marketSymbol;
+                    //string url = $"/markets/{marketSymbol}/?binSize={periodString}&partial=false&symbol={marketSymbol}&reverse=true" + marketSymbol;
+                    url += "&startTime=" + Math.Floor(theStartDateSeconds).UnixTimeStampLocalToDateTimeSeconds().ToString("yyyy-MM-dd-HH");
+                    url += "&endTime=" + Math.Floor(theEndDateSeconds).UnixTimeStampLocalToDateTimeSeconds().ToString("yyyy-MM-dd-HH");
+                    url += "&count=" + (maxDatas.ToStringInvariant());
+                    var obj = await MakeJsonRequestAsync<JToken>(url);
+                    foreach (var t in obj)
+                    {
+                        candles.Add(this.ParseCandle(t, marketSymbol, periodSeconds, "open", "high", "low", "close", "startTime", TimestampType.Iso8601, "volume"));
+                    }
+                }
+            }
+            else
+            {
+                string periodString = PeriodSecondsToString(periodSeconds);
+                string url = $"/markets/{marketSymbol}/?binSize={periodString}&partial=false&symbol={marketSymbol}&reverse=true" + marketSymbol;
+                url = $"/markets/{marketSymbol}/candles?resolution={periodSeconds}";
+                if (limit != null)
+                {
+                    url += "&limit=" + (limit.Value.ToStringInvariant());
+                }
+                if (startDate != null)
+                {
+                    url += $"&start_time={Math.Floor(startDate.Value.UnixTimestampFromDateTimeSeconds())}";
+                }
+                if (endDate != null)
+                {
+                    url += $"&end_time={Math.Floor(endDate.Value.UnixTimestampFromDateTimeSeconds())}";
+                }
+
+                var obj = await MakeJsonRequestAsync<JToken>(url);
+                foreach (var t in obj)
+                {
+                    candles.Add(this.ParseCandle(t, marketSymbol, periodSeconds, "open", "high", "low", "close", "startTime", TimestampType.Iso8601, "volume"));
+                }
+                candles.Reverse();
+            }
+            return candles;
+
+
+
             return candles;
         }
-
+// 
+//         public override async Task<ExchangeOrderBook> GetOrderBookAsync(string marketSymbol, int maxCount = 100)
+//         {
+//             /*
+//              * [
+//   {
+//     "symbol": "XBTUSD",
+//     "id": 8799054750,
+//     "side": "Sell",
+//     "size": 99391,
+//     "price": 9452.5
+//   },
+//   {
+//     "symbol": "XBTUSD",
+//     "id": 8799054800,
+//     "side": "Sell",
+//     "size": 178379,
+//     "price": 9452
+// 
+//   }]*/
+//             Dictionary<string, decimal> amounts = new Dictionary<string, decimal>();
+//             JToken token = await MakeJsonRequestAsync<JToken>($"/orderBook/L2?symbol={marketSymbol}&depth=25");
+// 
+//             ExchangeOrderBook book = new ExchangeOrderBook();
+//             book.SequenceId = token["data"][0]["timestamp"].ConvertInvariant<DateTime>().Ticks;
+//             var price = 0m;
+//             var size = 0m;
+//             book.MarketSymbol = marketSymbol;
+//             void applyData(JArray data, bool isBuy)
+//             {
+//                 foreach (var d in data)
+//                 {
+//                     price = d[0].ConvertInvariant<decimal>();
+//                     size = d[1].ConvertInvariant<decimal>();
+//                     var depth = new ExchangeOrderPrice { Price = price, Amount = size };
+//                     if (isBuy)
+//                     {
+//                         book.Bids[depth.Price] = depth;
+//                     }
+//                     else
+//                     {
+//                         book.Asks[depth.Price] = depth;
+//                     }
+// 
+//                 }
+//             }
+// 
+//             return book;
+//         }
+    
         protected override async Task<Dictionary<string, decimal>> OnGetAmountsAsync()
         {
             /*

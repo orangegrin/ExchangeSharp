@@ -365,7 +365,117 @@ namespace ExchangeSharp
                 }
             });
         }
+        protected override IWebSocket OnGetOrderDetailsWebSocket(Action<ExchangeOrderResult> callback)
+        {
+            /*
+             {
+    "op": "notify",
+    "topic": "orders.btc",
+    "ts": 1489474082831,
+    "symbol": "BTC",
+    "contract_type": "this_week",
+    "contract_code": "BTC180914",
+    "volume": 111,
+    "price": 1111,
+    "order_price_type": "limit",
+    "direction": "buy",
+    "offset": "open",
+    "status": 6,
+    "lever_rate": 10,
+    "order_id": 633989207806582784,
+    "order_id_str": "633989207806582784",
+    "client_order_id": 10683,
+    "order_source": "web",
+    "order_type": 1,
+    "created_at": 1408076414000,
+    "trade_volume": 1,
+    "trade_turnover": 1200,
+    "fee": 0,
+    "trade_avg_price": 10,
+    "margin_frozen": 10,
+    "profit": 2,
+    "trade": [{
+        "id": "2131234825-6124591349-1",
+        "trade_id": 112,
+        "trade_volume": 1,
+        "trade_price": 123.4555,
+        "trade_fee": 0.234,
+        "trade_turnover": 34.123,
+        "created_at": 1490759594752,
+        "role": "maker"
+    }]
+}
+             */
+            return ConnectWebSocket(string.Empty, (_socket, msg) =>
+            {
 
+                var str = msg.ToStringFromUTF8();
+                if (str.Contains("ping"))//心跳添加
+                {
+                    _socket.SendMessageAsync(str.Replace("ping", "pong"));
+                    callback(new ExchangeOrderResult() { MarketSymbol = "ping" });
+                }
+                else
+                {
+                    JToken token = JToken.Parse(str);
+
+                    if (token["err-code"].ToString() != "0")
+                    {
+                        Logger.Info("err-code:"+token["err-code"].ToStringInvariant());
+                        return Task.CompletedTask;
+                    }
+                    //{"success":true,"request":{"op":"authKeyExpires","args":["2xrwtDdMimp5Oi3F6oSmtsew",1552157533,"1665aedbd293e435fafbfaba2e5475f882bae9228bab0f29d9f3b5136d073294"]}}
+                    if (token["op"] != null && token["op"].ToStringInvariant() == "auth")
+                    {
+                        //{ "op": "subscribe", "args": ["order"]}
+                        _socket.SendMessageAsync(new { op = "sub", topic = "orders.*" });
+                        return Task.CompletedTask;
+                    }
+                    if (token["table"] == null)
+                    {
+                        return Task.CompletedTask;
+                    }
+                    //{ "table":"order","action":"insert","data":[{ "orderID":"b48f4eea-5320-cc06-68f3-d80d60896e31","clOrdID":"","clOrdLinkID":"","account":954891,"symbol":"XBTUSD","side":"Buy","simpleOrderQty":null,"orderQty":100,"price":3850,"displayQty":null,"stopPx":null,"pegOffsetValue":null,"pegPriceType":"","currency":"USD","settlCurrency":"XBt","ordType":"Limit","timeInForce":"GoodTillCancel","execInst":"ParticipateDoNotInitiate","contingencyType":"","exDestination":"XBME","ordStatus":"New","triggered":"","workingIndicator":false,"ordRejReason":"","simpleLeavesQty":null,"leavesQty":100,"simpleCumQty":null,"cumQty":0,"avgPx":null,"multiLegReportingType":"SingleSecurity","text":"Submission from www.bitmex.com","transactTime":"2019-03-09T19:24:21.789Z","timestamp":"2019-03-09T19:24:21.789Z"}]}
+                    var action = token["action"].ToStringInvariant();
+                    JArray data = token["data"] as JArray;
+                    foreach (var t in data)
+                    {
+                        var marketSymbol = t["symbol"].ToStringInvariant();
+                        var order = ParseOrder(t);
+                        callback(order);
+                        //callback(new KeyValuePair<string, ExchangeTrade>(marketSymbol, t.ParseTrade("size", "price", "side", "timestamp", TimestampType.Iso8601, "trdMatchID")));
+                    }
+                }
+                return Task.CompletedTask;
+            }, async (_socket) =>
+            {
+                //连接中断也不应该删除历史信息
+                //fullOrders.Clear();
+                var payloadJSON = GeneratePayloadJSON();
+                await _socket.SendMessageAsync(payloadJSON.Result);
+            });
+
+        }
+
+        private async Task<string> GeneratePayloadJSON()
+        {
+            object expires = await GenerateNonceAsync();
+            var message = $"GET\n" +
+                $"api.hbdm.com\n" +
+                $"/notification\n";
+            var signature = CryptoUtility.SHA256Sign(message, PrivateApiKey.ToUnsecureString());
+            Dictionary<string, object> payload = new Dictionary<string, object>
+                {
+                    { "op", "auth"},
+                    { "type", "api"},
+                    { "AccessKeyId",  PublicApiKey.ToUnsecureString()},
+                    { "SignatureMethod", "HmacSHA256"},
+                    { "SignatureVersion", "2"},
+                    { "Timestamp", expires},
+                    { "Signature", signature }
+                };
+            return CryptoUtility.GetJsonForPayload(payload);
+        }
         protected override async Task<IReadOnlyDictionary<string, ExchangeCurrency>> OnGetCurrenciesAsync()
         {
             var currencies = new Dictionary<string, ExchangeCurrency>(StringComparer.OrdinalIgnoreCase);

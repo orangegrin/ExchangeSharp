@@ -34,6 +34,7 @@ namespace ExchangeSharp
         /// The default cache policy caches things like get symbols, tickers, order book, order details, etc. See ExchangeAPI constructor for full list.
         /// </summary>
         public static bool UseDefaultMethodCachePolicy { get; set; } = true;
+        public string SubAccount { get; set; } = "";
 
         #region Private methods
 
@@ -110,6 +111,7 @@ namespace ExchangeSharp
         protected virtual IWebSocket OnGetTradesWebSocket(Action<KeyValuePair<string, ExchangeTrade>> callback, params string[] marketSymbols) => throw new NotImplementedException();
         protected virtual IWebSocket OnGetOrderBookWebSocket(Action<ExchangeOrderBook> callback, int maxCount = 20, params string[] marketSymbols) => throw new NotImplementedException();
         protected virtual IWebSocket OnGetOrderDetailsWebSocket(Action<ExchangeOrderResult> callback) => throw new NotImplementedException();
+        protected virtual IWebSocket OnGetOrderDetailsWebSocketBySymbols(Action<ExchangeOrderResult> callback, params string[] marketSymbols) => throw new NotImplementedException();
         protected virtual IWebSocket OnGetPositionDetailsWebSocket(Action<ExchangeMarginPositionResult> callback) => throw new NotImplementedException();
         protected virtual IWebSocket OnGetCompletedOrderDetailsWebSocket(Action<ExchangeOrderResult> callback) => throw new NotImplementedException();
 
@@ -896,11 +898,20 @@ namespace ExchangeSharp
         /// </summary>
         /// <param name="callback">Callback</param>
         /// <returns>Web socket, call Dispose to close</returns>
-        public virtual IWebSocket GetOrderDetailsWebSocket(Action<ExchangeOrderResult> callback)
+        public virtual IWebSocket GetOrderDetailsWebSocket(Action<ExchangeOrderResult> callback, string[] marketSymbols=null)
         {
             callback.ThrowIfNull(nameof(callback), "Callback must not be null");
-            return OnGetOrderDetailsWebSocket(callback);
+            if (marketSymbols ==null)
+            {
+                return OnGetOrderDetailsWebSocket(callback);
+            }
+            else
+            {
+                return OnGetOrderDetailsWebSocketBySymbols(callback, marketSymbols);
+            }
+            
         }
+
 
         /// <summary>
         /// Get the details of all changed orders via web socket

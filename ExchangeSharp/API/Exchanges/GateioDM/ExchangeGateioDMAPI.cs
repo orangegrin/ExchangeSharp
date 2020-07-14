@@ -945,6 +945,10 @@ namespace ExchangeSharp
             {
                 payload["tif"] = "ioc";
             }
+            else if (order.OrderType == OrderType.Limit)
+            {
+                payload["tif"] = "poc";
+            }
 
             //payload["text"] = false;
             if (order.ExtraParameters.TryGetValue("execInst", out var execInst))
@@ -952,6 +956,7 @@ namespace ExchangeSharp
                 payload["execInst"] = execInst;
             }
         }
+        private Dictionary<string, ExchangeOrderResult> fullOrders = new Dictionary<string, ExchangeOrderResult>();
         private ExchangeOrderResult ParseOrder(JObject token,ExchangeOrderRequest orderRequest=null)
         {
             /*
@@ -978,50 +983,187 @@ namespace ExchangeSharp
   "finish_as": "cancelled"
 }
             */
-            ExchangeOrderResult result = new ExchangeOrderResult();
-            if (token["status"].ToString().Equals("finished"))
+            
+           
+
+            ExchangeOrderResult fullOrder;
+            lock (fullOrders)
             {
+                bool had = fullOrders.TryGetValue(token["id"].ToStringInvariant(), out fullOrder);
                 decimal size = token["size"].ConvertInvariant<decimal>();
+                ExchangeOrderResult result = new ExchangeOrderResult();
                 result = new ExchangeOrderResult
                 {
                     Amount = Math.Abs(size),
                     AmountFilled = Math.Abs(token["left"].ConvertInvariant<decimal>()),
                     Price = token["price"].ConvertInvariant<decimal>(),
-                    IsBuy = size >=0?true:false,
-                    OrderDate = new DateTime( token["create_time"].ConvertInvariant<long>()),
+                    IsBuy = size >= 0 ? true : false,
+                    OrderDate = new DateTime(token["create_time"].ConvertInvariant<long>()),
                     OrderId = token["id"].ToStringInvariant(),//token.Data["order_id"].ToStringInvariant(),
                     MarketSymbol = token["contract"].ToString(),
                 };
-                result.Result = ExchangeAPIOrderResult.Pending;
+                if (string.IsNullOrEmpty(result.OrderId))
+                {
+                    result.OrderId = token["id"].ToStringInvariant();
+                }
+                if (token["fill_price"] != null)
+                {
+                    result.AveragePrice = token["avgFillPrice"].ConvertInvariant<decimal>();
+                }
+                if (had)
+                {
+                    result.IsBuy = fullOrder.IsBuy;
+                }
+                else
+                {
+                    fullOrder = result;
+                }
+
+               
+                // http://www.onixs.biz/fix-dictionary/5.0.SP2/tagNum_39.html
+                if (result.Result != ExchangeAPIOrderResult.Filled)//改为成交后不修改成其他状态
+                {
+                    
+                    if (token["finish_as"] != null && !string.IsNullOrEmpty(token["finish_as"].ToString()))
+                    {
+                        string statu = token["finish_as"].ToString();
+                        if (statu.Equals("filled"))
+                        {
+                            if (result.AmountFilled == 0)
+                            {
+                                result.Result = ExchangeAPIOrderResult.Pending;
+                            }
+                            else if (result.Amount == result.AmountFilled)
+                            {
+                                result.Result = ExchangeAPIOrderResult.Filled;
+                            }
+                            else if (result.AmountFilled > 0)
+                            {
+                                result.Result = ExchangeAPIOrderResult.FilledPartially;
+                            }
+                            Logger.Info("3ExchangeAPIOrderResult:" + result.Result + ":" + token.ToString());
+                        }
+                        else if (statu.Equals("cancelled"))
+                        {
+                            if (result.AmountFilled == 0)
+                            {
+                                result.Result = ExchangeAPIOrderResult.Canceled;
+                            }
+                            else if (result.Amount == result.AmountFilled)
+                            {
+                                result.Result = ExchangeAPIOrderResult.Filled;
+                            }
+                            else if (result.AmountFilled > 0)
+                            {
+                                result.Result = ExchangeAPIOrderResult.FilledPartially;
+                            }
+                            Logger.Info("4ExchangeAPIOrderResult:" + result.Result + ":" + token.ToString());
+                        }
+//                         else if (statu.Equals("liquidated"))
+//                         {
+//                             if (result.Amount == result.AmountFilled)
+//                                 result.Result = ExchangeAPIOrderResult.Filled;
+//                             else
+//                                 result.Result = ExchangeAPIOrderResult.FilledPartially;
+// 
+//                         }
+//                         else if (statu.Equals("ioc"))
+//                         {
+//                             if (result.Amount == result.AmountFilled)
+//                                 result.Result = ExchangeAPIOrderResult.Filled;
+//                             else
+//                                 result.Result = ExchangeAPIOrderResult.FilledPartially;
+// 
+//                         }
+//                         else if (statu.Equals("reduce_only"))
+//                         {
+//                             if (result.Amount == result.AmountFilled)
+//                                 result.Result = ExchangeAPIOrderResult.Filled;
+//                             else
+//                                 result.Result = ExchangeAPIOrderResult.FilledPartially;
+// 
+//                         }
+                    }
+                    else
+                    {
+                        switch (token["status"].ToStringInvariant())
+                        {
+                            case "finished"://部分成交的时候 也是 在 new 状态
+                                result.Result = ExchangeAPIOrderResult.Pending;
+                                Logger.Info("1ExchangeAPIOrderResult.Pending:" + token.ToString());
+                                if (result.AmountFilled == 0)
+                                {
+                                    result.Result = ExchangeAPIOrderResult.Pending;
+                                }
+                                else if (result.Amount == result.AmountFilled)
+                                {
+                                    result.Result = ExchangeAPIOrderResult.Filled;
+                                }
+                                else if (result.AmountFilled > 0)
+                                {
+                                    result.Result = ExchangeAPIOrderResult.FilledPartially;
+                                }
+                                break;
+                            case "open":
+                                if (result.AmountFilled == 0)
+                                {
+                                    result.Result = ExchangeAPIOrderResult.Pending;
+                                }
+                                else if (result.AmountFilled > 0)
+                                {
+                                    result.Result = ExchangeAPIOrderResult.FilledPartially;
+                                }
+                                else if (result.Amount == result.AmountFilled)
+                                {
+                                    result.Result = ExchangeAPIOrderResult.Filled;
+                                }
+
+                                Logger.Info("2ExchangeAPIOrderResult" + result.Result + ":" + token.ToString());
+                                break;
+                            default:
+                                result.Result = ExchangeAPIOrderResult.Error;
+                                Logger.Info("5ExchangeAPIOrderResult.Error:" + token.ToString());
+                                break;
+                        }
+                    }
+                    if (token["triggered"] != null)
+                    {
+                        if (token["triggered"].ToStringInvariant().Equals("StopOrderTriggered"))
+                        {
+                            result.Result = ExchangeAPIOrderResult.TriggerPending;
+                        }
+                    }
+                }
+                if (had)
+                {
+                    if (result.Amount != 0)
+                        fullOrder.Amount = result.Amount;
+                    if (result.Result != ExchangeAPIOrderResult.Error)
+                        fullOrder.Result = result.Result;
+                    if (result.Price != 0)
+                        fullOrder.Price = result.Price;
+                    if (result.OrderDate > fullOrder.OrderDate)
+                        fullOrder.OrderDate = result.OrderDate;
+                    if (result.AmountFilled != 0)
+                        fullOrder.AmountFilled = result.AmountFilled;
+                    if (result.AveragePrice != 0)
+                        fullOrder.AveragePrice = result.AveragePrice;
+                }
+                else
+                {
+                    fullOrder = result;
+                }
+                if (result == null)
+                {
+                    Logger.Error("ExchangeAPIOrderResult:" + token.ToString());
+                    return fullOrder;
+                }
+                else
+                {
+                    fullOrders[result.OrderId] = fullOrder;
+                    return fullOrder;//这里返回的是一个引用，如果多线程再次被修改，比如重filed改成pending，后面方法执行之前被修改 ，就会导致后面出问题，应该改成返回一个clone
+                }
             }
-            else
-            {
-                //Logger.Warn("m_OnPlaceOrderAsync 失败 OrderId:"+ token["data"]["order_id"].ToStringInvariant());
-                result.Result = ExchangeAPIOrderResult.Error;
-            }
-
-            //// http://www.onixs.biz/fix-dictionary/5.0.SP2/tagNum_39.html
-            //switch (token["order_type"].ToStringInvariant())
-            //{
-            //    case "New":
-            //        result.Result = ExchangeAPIOrderResult.Pending;
-            //        break;
-            //    case "PartiallyFilled":
-            //        result.Result = ExchangeAPIOrderResult.FilledPartially;
-            //        break;
-            //    case "Filled":
-            //        result.Result = ExchangeAPIOrderResult.Filled;
-            //        break;
-            //    case "Canceled":
-            //        result.Result = ExchangeAPIOrderResult.Canceled;
-            //        break;
-
-            //    default:
-            //        result.Result = ExchangeAPIOrderResult.Error;
-            //        break;
-            //}
-
-            return result;
         }
        
         private ExchangeMarginPositionResult ParasePosition(JObject position)

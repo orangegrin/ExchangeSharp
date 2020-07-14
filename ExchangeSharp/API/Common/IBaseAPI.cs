@@ -67,6 +67,10 @@ namespace ExchangeSharp
         NonceStyle NonceStyle { get; }
 
         /// <summary>
+        /// 子账号标志
+        /// </summary>
+        string SubAccount { get; set; }
+        /// <summary>
         /// Cache policy - defaults to no cache, don't change unless you have specific needs
         /// </summary>
         System.Net.Cache.RequestCachePolicy RequestCachePolicy { get; set; }

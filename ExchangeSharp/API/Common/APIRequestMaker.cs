@@ -231,7 +231,7 @@ namespace ExchangeSharp
                             throw new APIException(string.Format("{0} - {1}",
                                 response.StatusCode.ConvertInvariant<int>(), response.StatusCode));
                         }
-                        throw new APIException(responseString);
+                        throw new APIException(responseString + "request "+ request.ToString());
                     }
                     api.ProcessResponse(new InternalHttpWebResponse(response));
                     RequestStateChanged?.Invoke(this, RequestMakerState.Finished, responseString);

@@ -250,7 +250,7 @@ namespace ExchangeSharp
         /// </summary>
         /// <param name="callback">Callback</param>
         /// <returns>Web socket, call Dispose to close</returns>
-        IWebSocket GetOrderDetailsWebSocket(Action<ExchangeOrderResult> callback);
+        IWebSocket GetOrderDetailsWebSocket(Action<ExchangeOrderResult> callback, string[] marketSymbols=null);
 
         /// <summary>
         /// Get the details of all changed position via web socket
