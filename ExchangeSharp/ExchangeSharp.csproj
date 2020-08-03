@@ -138,6 +138,10 @@
     </None>
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="API\Exchanges\ZBG\" />
+  </ItemGroup>
+
   <PropertyGroup Condition="'$(TargetFramework)' == 'net471'">
     <DefineConstants>TRACE;DEBUG;HAS_WINDOWS_FORMS</DefineConstants>
   </PropertyGroup>

@@ -23,9 +23,9 @@ using Newtonsoft.Json.Linq;
 
 namespace ExchangeSharp
 {
-    public sealed partial class ExchangeFTXAPI : ExchangeAPI
+    public sealed partial class ExchangeZBGDMAPI : ExchangeAPI
     {
-        public override string BaseUrl { get; set; } = "https://ftx.com/api";
+        public override string BaseUrl { get; set; } = "https://www.zbg.fun";
         public override string BaseUrlWebSocket { get; set; } = "wss://ftx.com/ws";
 //         public override string BaseUrl { get; set; } = "https://testnet.bitmex.com/api/v1";
 //         public override string BaseUrlWebSocket { get; set; } = "wss://testnet.bitmex.com/realtime";
@@ -35,7 +35,7 @@ namespace ExchangeSharp
         private string OrderIdStart;
         private int OrderNum;
         
-        public ExchangeFTXAPI()
+        public ExchangeZBGDMAPI()
         {
             RequestWindow = TimeSpan.Zero;
             NonceStyle = NonceStyle.ExpiresUnixMilliseconds;
@@ -81,12 +81,39 @@ namespace ExchangeSharp
                 var nonce = payload["nonce"].ConvertInvariant<long>();
                 payload.Remove("nonce");
                 var msg = CryptoUtility.GetJsonForPayload(payload);
-                var sign = $"{nonce}{request.Method}{request.RequestUri.AbsolutePath}{request.RequestUri.Query}{msg}";
-                string signature = CryptoUtility.SHA256Sign(sign, CryptoUtility.ToUnsecureBytesUTF8(PrivateApiKey));
-               // Logger.Debug(PublicApiKey.ToUnsecureString());
-                request.AddHeader("FTX-KEY", PublicApiKey.ToUnsecureString());
-                request.AddHeader("FTX-SIGN", signature);
-                request.AddHeader("FTX-TS", nonce.ToStringInvariant());
+                //var sign = $"{nonce}{request.Method}{request.RequestUri.AbsolutePath}{request.RequestUri.Query}{msg}";
+                if (request.Method.Equals("GET"))
+                {
+                    msg = "";
+                    if (!string.IsNullOrEmpty(request.RequestUri.Query))
+                    {
+                        var datas = request.RequestUri.Query.Split(new string[] { "?" }, StringSplitOptions.None);
+                        var str = datas[1].Split(new string[] { "&" }, StringSplitOptions.None);
+                        var dataDic = new Dictionary<string, object>();
+                        foreach (var s in str)
+                        {
+                            var splits = s.Split(new string[] { "=" }, StringSplitOptions.None);
+                            dataDic.Add(splits[0], splits[1]);
+                        }
+                        dataDic = CryptoUtility.AsciiSortDictionary(dataDic);
+                       
+                        foreach (var v in dataDic)
+                        {
+                            msg += v.Key + v.Value;
+                        }
+                    }
+                   
+                }
+
+                var sign = $"{PublicApiKey.ToUnsecureString()}{nonce}{msg}{PrivateApiKey.ToUnsecureString()}";
+
+                string signature = CryptoUtility.MD5Sign(sign);
+
+                Logger.Debug(PrivateApiKey.ToUnsecureString() + "    "+PublicApiKey.ToUnsecureString());
+                // Logger.Debug(PublicApiKey.ToUnsecureString());
+                request.AddHeader("Apiid", PublicApiKey.ToUnsecureString());
+                request.AddHeader("Sign", signature);
+                request.AddHeader("Timestamp", nonce.ToStringInvariant());
                 
                 if (!string.IsNullOrEmpty(SubAccount))
                 {
@@ -865,7 +892,6 @@ namespace ExchangeSharp
                 else
                 {
                     token = await MakeJsonRequestAsync<JToken>("/orders/"+ orderId, BaseUrl, payload, "DELETE");
-                    
                 }
             }
             try
@@ -878,32 +904,42 @@ namespace ExchangeSharp
             }
             catch (Exception ex)
             {
-
                 throw new Exception("CancelOrderEx:" + token.ToString());
             }
-
-
         }
 
         protected override async Task<ExchangeOrderResult> OnPlaceOrderAsync(ExchangeOrderRequest order)
         {
             Dictionary<string, object> payload = await GetNoncePayloadAsync();
             JToken token;
-            if (order.ExtraParameters.TryGetValue("orderID", out var orderID))
-            {
-                Logger.Debug("change price:"+ orderID);
-                payload["price"] = order.Price;
-                payload["size"] = order.Amount;
-                //payload["clientId"] = orderID;
-                token = await MakeJsonRequestAsync<JToken>("/orders/by_client_id/"+ orderID+"/modify", BaseUrl, payload, "POST");
-            }
-            else
-            {
-                
-                AddOrderToPayload(order, payload);
-                Logger.Debug("add order:" + payload["clientId"]);
-                token = await MakeJsonRequestAsync<JToken>("/orders", BaseUrl, payload, "POST");
-            }
+
+            // 
+            //             if (order.ExtraParameters.TryGetValue("orderID", out var orderID))
+            //             {
+            //                 Logger.Debug("change price:"+ orderID);
+            //                 payload["price"] = order.Price;
+            //                 payload["size"] = order.Amount;
+            //                 //payload["clientId"] = orderID;
+            //                 token = await MakeJsonRequestAsync<JToken>("/orders/by_client_id/"+ orderID+"/modify", BaseUrl, payload, "POST");
+            //             }
+            //             else
+            //             {
+            //                 
+            //                 AddOrderToPayload(order, payload);
+            //                 Logger.Debug("add order:" + payload["clientId"]);
+            //                 token = await MakeJsonRequestAsync<JToken>("/orders", BaseUrl, payload, "POST");
+            //             }
+            //             payload.Add("symbol", "zt_ust"); 
+            //             payload.Add("side", "buy");
+            //             payload.Add("from", 1);
+            //             payload.Add("size", 100);
+
+
+            //token = await MakeJsonRequestAsync<JToken>("exchange/api/v1/order/orders?symbol=BTC_USDT&side=buy&from=1&size=100", BaseUrl, payload, "GET");
+            //token = await MakeJsonRequestAsync<JToken>("/exchange/api/v1/future/assets/available", BaseUrl, payload, "GET");
+
+            AddOrderToPayload(order, payload);
+            token = await MakeJsonRequestAsync<JToken>("/exchange/api/v1/future/place", BaseUrl, payload, "POST");
             return ParseOrder(token);
         }
 
@@ -1034,10 +1070,10 @@ namespace ExchangeSharp
         }
         private void AddOrderToPayload(ExchangeOrderRequest order, Dictionary<string, object> payload)
         {
-            payload["market"] = order.MarketSymbol;
-            payload["type"] = order.OrderType.ToStringLowerInvariant();
+            payload["symbol"] = order.MarketSymbol;
+            payload["type"] = GetOrderType( order.OrderType);
             payload["side"] = order.IsBuy ? "buy" : "sell";
-            payload["size"] = order.Amount;
+            payload["quantity"] = order.Amount;
             if (order.Price != 0)
             {
                 payload["postOnly"] = true;//限价只挂单
@@ -1048,7 +1084,15 @@ namespace ExchangeSharp
                 payload["postOnly"] = false;//市价单
                 payload["price"] = null;
             }
-                
+            if (order.ExtraParameters.TryGetValue("positionEffect", out object positionEffect))
+            {
+                payload["positionEffect"] = positionEffect;
+            }
+            else
+                throw new Exception("ExtraParameters: \"positionEffect\" must set value");
+            
+            payload["marginType"] = 1;
+            payload["marginRate"] = "0";
             if (order.StopPrice != 0)
                 payload["stopPx"] = order.StopPrice;
             //payload["displayQty"] = 0;//隐藏订单
@@ -1067,6 +1111,16 @@ namespace ExchangeSharp
             payload["clientId"] = GetClinetOrderID();
             
 
+        }
+
+        private int GetOrderType(OrderType orderType)
+        {
+            if (orderType == OrderType.Limit)
+                return 1;
+            else if (orderType == OrderType.Market)
+                return 3;
+            else
+                throw new Exception("Had not the type" + orderType.ToString());
         }
 
         private ExchangeOrderResult ParseOrder(JToken token)
@@ -1340,7 +1394,6 @@ namespace ExchangeSharp
                 candles.Reverse();
             }
             return candles;
-
         }
 
 
@@ -1398,7 +1451,7 @@ namespace ExchangeSharp
         }
     }
 
-    public partial class ExchangeName { public const string FTX = "FTX"; }
+    public partial class ExchangeName { public const string ZBGDM = "ZBGDM"; }
     public partial class ExchangeFee
     {
     }

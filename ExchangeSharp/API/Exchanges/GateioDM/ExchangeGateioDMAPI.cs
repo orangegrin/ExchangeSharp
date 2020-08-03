@@ -14,15 +14,26 @@ namespace ExchangeSharp
     {
         //         public override string BaseUrl { get; set; } = "https://fx-api.gateio.ws";
         //         public string BaseUrlV1 { get; set; } = "https://fx-api.gateio.ws/api/v4";
+        /// <summary>
+        /// for test
+        /// </summary>
+        //public override string BaseUrl { get; set; } = "https://fx-api-testnet.gateio.ws";
+        public override string BaseUrl { get; set; } = "https://fx-api.gateio.ws";
+        /// <summary>
+        /// for test 
+        /// </summary>
+        //public string BaseUrlV1 { get; set; } = "https://fx-api-testnet.gateio.ws/api/v4";
+        public string BaseUrlV1 { get; set; } = " https://fx-api.gateio.ws/api/v4";
 
-        public override string BaseUrl { get; set; } = "https://fx-api-testnet.gateio.ws";
-        public string BaseUrlV1 { get; set; } = "https://fx-api-testnet.gateio.ws/api/v4";
+        /// <summary>
+        /// for test
+        /// </summary>
+        //public override string BaseUrlWebSocket { get; set; } = "wss://fx-ws-testnet.gateio.ws/v4/ws/usdt";//"wss://fx-ws.gateio.ws/v4/ws/usdt";
+        public override string BaseUrlWebSocket { get; set; } = "wss://fx-ws.gateio.ws/v4/ws/usdt";//"wss://fx-ws.gateio.ws/v4/ws/usdt";
+        public string PrivateUrlV1 { get; set; } = "https://fx-api.gateio.ws/api/v4";
 
-        public override string BaseUrlWebSocket { get; set; } = "wss://fx-ws-testnet.gateio.ws/v4/ws";//"wss://fx-ws.gateio.ws/v4/ws";
-        public string PrivateUrlV1 { get; set; } = "https://api.GateioDM.com/api/v1";
-
-
-        
+        private const decimal ETH_UNIT = 0.01m;
+        private const decimal BTC_UNIT = 0.0001m;
         public bool IsMargin { get; set; }
         public string SubType { get; set; }
 
@@ -53,6 +64,33 @@ namespace ExchangeSharp
             return ExchangeMarketSymbolToGlobalMarketSymbolWithSeparator(marketSymbol.Substring(3) + GlobalMarketSymbolSeparator + marketSymbol.Substring(0, 3), GlobalMarketSymbolSeparator);
         }
 
+        private decimal GetPerCount(decimal inNum,string marketSymbol)
+        {
+            GetSymbolAndContractCode(marketSymbol, out string symbol, out string contractCode);
+            if (marketSymbol.Contains("BTC"))
+            {
+                return inNum / BTC_UNIT;
+            }else if (marketSymbol.Contains("ETH"))
+            {
+                return inNum / ETH_UNIT;
+            }
+            throw new Exception("Can not find contractCode:" + marketSymbol);
+        }
+        private decimal GetRestorePerCount(decimal inNum, string marketSymbol)
+        {
+            GetSymbolAndContractCode(marketSymbol, out string symbol, out string contractCode);
+            if (marketSymbol.Contains("BTC"))
+            {
+                return inNum * BTC_UNIT;
+            }
+            else if (marketSymbol.Contains("ETH"))
+            {
+                return inNum * ETH_UNIT;
+            }
+            
+            throw new Exception("Can not find contractCode:" + marketSymbol);
+            return 0;
+        }
         /// <summary>
         /// marketSymbol ws 2 web 
         /// </summary>
@@ -63,7 +101,7 @@ namespace ExchangeSharp
             string[] strAry = new string[2];
             string[] splitAry = marketSymbol.Split(MarketSymbolSeparator.ToCharArray(), StringSplitOptions.None);
             symbol = marketSymbol;
-            contractCode =splitAry[0].ToLower();
+            contractCode =splitAry[1].ToLower();
         }
         //1min, 5min, 15min, 30min, 60min,4hour,1day, 1mon
         public override string PeriodSecondsToString(int seconds)
@@ -79,51 +117,71 @@ namespace ExchangeSharp
         #region Websocket API
         protected override IWebSocket OnGetOrderBookWebSocket(Action<ExchangeOrderBook> callback, int maxCount = 20, params string[] marketSymbols)
         {
-            
+            Timer pingTimer = null;
+
             IWebSocket web= ConnectWebSocket(string.Empty, async (_socket, msg) =>
             {
                 /*
-                    {{
-                      "id": "id1",
-                      "status": "ok",
-                      "subbed": "market.btcusdt.depth.step0",
-                      "ts": 1526749164133
-                    }}
-
-
-                    {{
-                      "ch": "market.btcusdt.depth.step0",
-                      "ts": 1526749254037,
-                      "tick": {
-                        "bids": [
-                          [
-                            8268.3,
-                            0.101
-                          ],
-                          [
-                            8268.29,
-                            0.8248
-                          ],
-      
-                        ],
-                        "asks": [
-                          [
-                            8275.07,
-                            0.1961
-                          ],
-	  
-                          [
-                            8337.1,
-                            0.5803
-                          ]
-                        ],
-                        "ts": 1526749254016,
-                        "version": 7664175145
-                      }
-                    }}
+                   {
+  "time": 1594800208,
+  "channel": "futures.order_book",
+  "event": "all",
+  "error": null,
+  "result": {
+    "contract": "BTC_USDT",
+    "asks": [
+      {
+        "p": "9300",
+        "s": 93898
+      },
+      {
+        "p": "9310.5",
+        "s": 367750
+      },
+      {
+        "p": "9310.6",
+        "s": 129516
+      },
+      {
+        "p": "9313",
+        "s": 298364
+      },
+      {
+        "p": "9314",
+        "s": 188403
+      }
+    ],
+    "bids": [
+      {
+        "p": "9225.8",
+        "s": 387
+      },
+      {
+        "p": "9228.4",
+        "s": 14
+      },
+      {
+        "p": "9230",
+        "s": 100000
+      },
+      {
+        "p": "9240.1",
+        "s": 165
+      },
+      {
+        "p": "9250",
+        "s": 99679
+      }
+    ]
+  }
+}
                  */
                 var str = msg.ToStringFromUTF8();
                 JToken token = JToken.Parse(str);
+                if (token.ToString().Contains("ping") || token.ToString().Contains("pong"))
+                {
+                    //Logger.Debug(token.ToString());
+                }
                 //Logger.Debug(token.ToString());
                 if (token["status"] != null)
                 {
@@ -140,7 +198,15 @@ namespace ExchangeSharp
                 var size = 0m;
 
                 var result = token["result"];
-                if (_event.Equals("all"))
+                if (_event.Equals("subscribe"))
+                {
+                    if (pingTimer == null)
+                    {
+                        pingTimer = new Timer(callback: async s => await _socket.SendMessageAsync(new { time =  Convert.ToInt32(token["time"].ToString()), channel = "futures.ping" }),
+                            state: null, dueTime: 0, period: 15000); // send a ping every 15 seconds
+                    }
+                }
+                else if (_event.Equals("all"))
                 {
                     
                     var marketSymbol = result["contract"].ToStringInvariant();
@@ -215,6 +281,11 @@ namespace ExchangeSharp
                     //Logger.Debug(s.ToString());
                     await _socket.SendMessageAsync(s);
                 }
+            }, async (_socket) =>
+            {
+                pingTimer.Dispose();
+                pingTimer = null;
+
             });
             return web;
         }
@@ -289,6 +360,12 @@ namespace ExchangeSharp
                 var str = msg.ToStringFromUTF8();
                 JToken token = JToken.Parse(str);
                 //Logger.Debug(token.ToString());
+
+                if (token.ToString().Contains("ping") || token.ToString().Contains("pong"))
+                {
+                    callback(new ExchangeOrderResult() { MarketSymbol = "pong" });
+                    //Logger.Debug(token.ToString());
+                }
                 if (token["result"] == null)
                 {
                     return;
@@ -936,7 +1013,7 @@ namespace ExchangeSharp
         {
             payload["contract"] = order.MarketSymbol;
 
-            payload["size"] = order.IsBuy ? order.Amount : -order.Amount;
+            payload["size"] = GetPerCount( order.IsBuy ? order.Amount : -order.Amount,order.MarketSymbol);
             //payload["iceberg"] = 0;
             payload["price"] = order.OrderType == OrderType.Limit ? order.Price.ToString() : "0";
             //payload["close"] = false;
@@ -991,16 +1068,20 @@ namespace ExchangeSharp
             {
                 bool had = fullOrders.TryGetValue(token["id"].ToStringInvariant(), out fullOrder);
                 decimal size = token["size"].ConvertInvariant<decimal>();
-                ExchangeOrderResult result = new ExchangeOrderResult();
-                result = new ExchangeOrderResult
+                string Symbol = token["contract"].ToString();
+                decimal amount = Math.Abs(GetRestorePerCount(size, Symbol));
+                decimal left = Math.Abs(GetRestorePerCount(token["left"].ConvertInvariant<decimal>(), Symbol));
+
+                ExchangeOrderResult result = new ExchangeOrderResult
                 {
-                    Amount = Math.Abs(size),
-                    AmountFilled = Math.Abs(token["left"].ConvertInvariant<decimal>()),
+                    MarketSymbol = Symbol,
+                    Amount = amount,
+                    AmountFilled = amount-left,
                     Price = token["price"].ConvertInvariant<decimal>(),
                     IsBuy = size >= 0 ? true : false,
                     OrderDate = new DateTime(token["create_time"].ConvertInvariant<long>()),
                     OrderId = token["id"].ToStringInvariant(),//token.Data["order_id"].ToStringInvariant(),
-                    MarketSymbol = token["contract"].ToString(),
+                   
                 };
                 if (string.IsNullOrEmpty(result.OrderId))
                 {
@@ -1008,7 +1089,7 @@ namespace ExchangeSharp
                 }
                 if (token["fill_price"] != null)
                 {
-                    result.AveragePrice = token["avgFillPrice"].ConvertInvariant<decimal>();
+                    result.AveragePrice = token["fill_price"].ConvertInvariant<decimal>();
                 }
                 if (had)
                 {

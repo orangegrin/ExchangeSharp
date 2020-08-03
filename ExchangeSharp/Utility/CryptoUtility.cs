@@ -662,7 +662,23 @@ namespace ExchangeSharp
             }
             return (GetJsonForPayload(payload));
         }
-
+        /// <summary>
+        /// sort by ascii 
+        /// </summary>
+        /// <param name="sArray"></param>
+        /// <returns></returns>
+        public static Dictionary<string, object> AsciiSortDictionary(Dictionary<string, object> sArray)
+        {
+            Dictionary<string, object> asciiDic = new Dictionary<string, object>();
+            string[] arrKeys = sArray.Keys.ToArray();
+            Array.Sort(arrKeys, string.CompareOrdinal);
+            foreach (var key in arrKeys)
+            {
+                object value = sArray[key];
+                asciiDic.Add(key, value);
+            }
+            return asciiDic;
+        }
 
         /// <summary>
         /// Write a form to a request
