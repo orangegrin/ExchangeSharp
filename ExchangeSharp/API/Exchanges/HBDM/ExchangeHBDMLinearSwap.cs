@@ -5,15 +5,15 @@ using System.Linq;
 using System.Threading.Tasks;
 
 using Newtonsoft.Json;
-
 namespace ExchangeSharp
 {
-    public sealed partial class ExchangeHBDMSwapAPI : ExchangeAPI
-    {
-        public override string BaseUrl { get; set; } = "https://api.hbdm.com";
-        public string BaseUrlV1 { get; set; } = "https://api.hbdm.com/api/v1";
-        public override string BaseUrlWebSocket { get; set; } = "wss://api.hbdm.com";
-        public string PrivateUrlV1 { get; set; } = "https://api.hbdm.com/api/v1";
+    public sealed partial class ExchangeHBDMLinearSwap: ExchangeAPI
+    {//https://api.btcgateway.pro  cn
+        //https://api.hbdm.com     all
+        public override string BaseUrl { get; set; } = "https://api.hbdm.vn"; //"https://api.btcgateway.pro";
+        public string BaseUrlV1 { get; set; } = "https://api.btcgateway.pro/api/v1";
+        public override string BaseUrlWebSocket { get; set; } = "wss://api.btcgateway.pro/linear-swap-ws";
+        public string PrivateUrlV1 { get; set; } = "https://api.btcgateway.pro/api/v1";
 
         public bool IsMargin { get; set; }
         public string SubType { get; set; }
@@ -23,7 +23,7 @@ namespace ExchangeSharp
                                                 /// 当前的仓位<MarketSymbol,ExchangeOrderResult>
                                                 /// </summary>
         public Dictionary<string, ExchangeOrderResult> currentPostionDic = null;
-        public ExchangeHBDMSwapAPI()
+        public ExchangeHBDMLinearSwap()
         {
 
             //RequestContentType = "application/x-www-form-urlencoded";
@@ -33,6 +33,7 @@ namespace ExchangeSharp
             MarketSymbolIsUppercase = true;
             WebSocketOrderBookType = WebSocketOrderBookType.FullBookAlways;
             currentPostionDic = new Dictionary<string, ExchangeOrderResult>();
+            RequestTimeout = TimeSpan.FromSeconds(20);
         }
         /// <summary>
         /// marketSymbol ws 2 web 
@@ -47,24 +48,10 @@ namespace ExchangeSharp
             contractCode = symbol + splitAry[1];
             if (splitAry.Length >= 3)
             {
-                contractType = symbol + "_" + splitAry[2];
+                contractType = symbol + "-" + splitAry[2];
             }
             else
                 contractType = contractCode;
-        }
-        public override string NormalizeMarketSymbol(string marketSymbol)
-        {
-            marketSymbol = (marketSymbol ?? string.Empty).Trim();
-            marketSymbol = marketSymbol
-                .Replace("/", MarketSymbolSeparator)
-                .Replace("_", MarketSymbolSeparator)
-                .Replace(" ", MarketSymbolSeparator)
-                .Replace(":", MarketSymbolSeparator);
-            if (MarketSymbolIsUppercase)
-            {
-                return marketSymbol.ToUpperInvariant();
-            }
-            return marketSymbol.ToLowerInvariant();
         }
         /// <summary>
         /// marketSymbol ws 2 web 
@@ -124,7 +111,7 @@ namespace ExchangeSharp
         #region Websocket API
         protected override IWebSocket OnGetOrderBookWebSocket(Action<ExchangeOrderBook> callback, int maxCount = 20, params string[] marketSymbols)
         {
-            return ConnectWebSocket("/swap-ws", async (_socket, msg) =>
+            return ConnectWebSocket(string.Empty, async (_socket, msg) =>
             {
                 /*
                     {{
@@ -195,13 +182,50 @@ namespace ExchangeSharp
                     GetSymbolAndContractCode(symbol, out string s, out string code, out string type);
                     long id = System.Threading.Interlocked.Increment(ref webSocketId);
                     //var normalizedSymbol = NormalizeMarketSymbol(symbol);
-                    string channel = $"market.{type}.depth.step9";
+                    string channel = $"market.{type}.depth.step0";
                     await _socket.SendMessageAsync(new { sub = channel, id = "id" + id.ToStringInvariant() });
                 }
             });
         }
         #endregion
 
+        protected override async Task OnGetHistoricalTradesAsync(Func<IEnumerable<ExchangeTrade>, bool> callback, string marketSymbol, DateTime? startDate = null, DateTime? endDate = null)
+        {
+            List<ExchangeTrade> trades = new List<ExchangeTrade>();
+            long? lastTradeId = null;
+
+            bool running = true;
+            Dictionary<string, object> payload = await GetNoncePayloadAsync();
+
+            payload["contract_code"] = marketSymbol;
+            payload["trade_type"] = 0;
+            payload["create_date"] = 3;
+            // Abucoins uses a page curser based on trade_id to iterate history. Keep paginating until startDate is reached or we run out of data
+            //while (running)
+            {
+                JToken obj = await MakeJsonRequestAsync<JToken>("/linear-swap-api/v1/swap_cross_matchresults", BaseUrl, payload, "POST");
+                //obj = await MakeJsonRequestAsync<JToken>("/linear-swap-api/v1/swap_cross_matchresults" + marketSymbol + "/trades" + (lastTradeId == null ? string.Empty : "?before=" + lastTradeId));
+                
+//                     foreach (JToken token in obj)
+//                     {
+// //                         ExchangeTrade trade = ParseExchangeTrade(token);
+// //                         if (startDate == null || trade.Timestamp >= startDate)
+// //                         {
+// //                             trades.Add(trade);
+// //                         }
+// //                         else
+// //                         {
+// //                             // sinceDateTime has been passed, no more paging
+// //                             running = false;
+// //                             break;
+// //                         }
+//                     }
+                
+              
+                trades.Clear();
+                await Task.Delay(1000);
+            }
+        }
         public override async Task<ExchangeOrderResult> PlaceOrderAsync(ExchangeOrderRequest order)
         {
             // *NOTE* do not wrap in CacheMethodCall
@@ -209,6 +233,24 @@ namespace ExchangeSharp
             //order.MarketSymbol = NormalizeMarketSymbol(order.MarketSymbol);
             return await OnPlaceOrderAsync(order);
         }
+        /// <summary>
+        /// 双仓模式需要传入是平仓还是开仓
+        /// </summary>
+        /// <param name="order"></param>
+        /// <param name="isOpen"></param>
+        /// <returns></returns>
+        public override async Task<ExchangeOrderResult> PlaceOrderDoubleSideAsync(ExchangeOrderRequest order, bool isOpen)
+        {
+            order.Amount = order.Amount;//两边平台100倍
+            string marketSymbol = order.MarketSymbol;
+            Side side = order.IsBuy == true ? Side.Buy : Side.Sell;
+            OrderType orderType = order.OrderType;
+            var backResult = await m_OnPlaceOrderAsync(order, isOpen);
+            backResult.Amount *= 1;
+
+            return backResult;
+        }
+
         #region Rest API
 
         protected override Uri ProcessRequestUrl(UriBuilder url, Dictionary<string, object> payload, string method)
@@ -235,6 +277,7 @@ namespace ExchangeSharp
                 string msg = CryptoUtility.GetFormForPayload(dict, false, false, false);
                 string toSign = $"{method}\n{url.Host}\n{url.Path}\n{msg}";
 
+               
                 // calculate signature
                 var sign = CryptoUtility.SHA256SignBase64(toSign, PrivateApiKey.ToUnsecureBytesUTF8()).UrlEncode();
 
@@ -396,7 +439,7 @@ namespace ExchangeSharp
             //    Logger.Error(new Exception("尚未实现限价单"));
             //    return new ExchangeOrderResult();
             //}
-            order.Amount = order.Amount / 100;//两边平台100倍
+            order.Amount = order.Amount / 1;//两边平台100倍
             string marketSymbol = order.MarketSymbol;
             Side side = order.IsBuy == true ? Side.Buy : Side.Sell;
             decimal price = order.Price;
@@ -420,7 +463,7 @@ namespace ExchangeSharp
             }
             else
             {
-                currentPostionAmount = currentPostion.Amount / 100;
+                currentPostionAmount = currentPostion.Amount / 1;
                 if (currentPostion.IsBuy)
                 {
                     if (side == Side.Buy)
@@ -472,13 +515,13 @@ namespace ExchangeSharp
             if (closeNum == 0)//仓位和加仓方向相同
             {
                 returnResult.Amount = currentPostionAmount + openNum;
-                returnResult.Amount = returnResult.Amount * 100;
+                returnResult.Amount = returnResult.Amount * 1;
                 returnResult.IsBuy = order.IsBuy;
             }
             else//仓位和加仓方向相反
             {
                 returnResult.Amount = Math.Abs(currentPostionAmount - order.Amount);
-                returnResult.Amount = returnResult.Amount * 100;
+                returnResult.Amount = returnResult.Amount * 1;
                 if (openNum > 0)//如果有新开仓说明最后是新开仓方向，否则是原来的方向
                 {
                     returnResult.IsBuy = order.IsBuy;
@@ -489,35 +532,29 @@ namespace ExchangeSharp
                 }
             }
             //为了避免多个crossMarket 同时操作
-            if (order.OrderType == OrderType.Market)//如果是市价 那么直接算数量， 否则需要等订单成交再计算数量
+            if (hadPosition)
             {
-                if (hadPosition)
+                currentPostionDic[marketSymbol] = returnResult;
+            }
+            else
+            {
+                if (currentPostionDic.ContainsKey(marketSymbol))
                 {
-
                     currentPostionDic[marketSymbol] = returnResult;
+                    Console.WriteLine("按理说应该有仓位");
                 }
                 else
-                {
-                    if (currentPostionDic.ContainsKey(marketSymbol))
-                    {
-                        currentPostionDic[marketSymbol] = returnResult;
-                        Console.WriteLine("按理说应该有仓位");
-                    }
-                    else
-                        currentPostionDic.Add(marketSymbol, returnResult);
-                    //currentPostionDic.Add(marketSymbol, returnResult);
-                }
+                    currentPostionDic.Add(marketSymbol, returnResult);
+                //currentPostionDic.Add(marketSymbol, returnResult);
             }
-           
 
             if (closeNum > 0)//平仓
             {
                 ExchangeOrderRequest closeOrder = order;
                 closeOrder.IsBuy = !currentPostion.IsBuy;
                 closeOrder.Amount = closeNum;
-                closeOrder.OrderType = order.OrderType;
                 ExchangeOrderResult downReturnResult = await m_OnPlaceOrderAsync(closeOrder, false);
-                downReturnResult.Amount = amount * 100;
+                downReturnResult.Amount = amount * 1;
                 returnResult = downReturnResult;
                 //m_OnPlaceOrderAsync(closeOrder, false);
                 //TODO 如果失败了平仓(不需貌似await)
@@ -527,9 +564,8 @@ namespace ExchangeSharp
                 ExchangeOrderRequest closeOrder = order;
                 //closeOrder.IsBuy = true;
                 order.Amount = openNum;
-                closeOrder.OrderType = order.OrderType;
                 ExchangeOrderResult m_returnResult = await m_OnPlaceOrderAsync(closeOrder, true);
-                m_returnResult.Amount = amount * 100;
+                m_returnResult.Amount = amount * 1;
                 returnResult = m_returnResult;
             }
             Logger.Debug("    OnPlaceOrderAsync 当前仓位：" + returnResult.ToExcleString());
@@ -540,11 +576,35 @@ namespace ExchangeSharp
         {
             GetSymbolAndContractCode(marketSymbol, out string symbol, out string contractCode, out string contractType);  //[0]symbol [1]contract_type
             Dictionary<string, object> payload = await GetNoncePayloadAsync();
-            payload["order_id"] = orderId;
-            payload["contract_code"] = contractCode;
-            Logger.Debug("orderId:" + orderId);
-            Logger.Debug("contractType:" + contractType);
-            JToken token = await MakeJsonRequestAsync<JToken>("/swap-api/v1/swap_cancel", BaseUrl, payload, "POST");
+
+            try
+            {
+                if (orderId == "all")
+                {
+                    payload["contract_code"] = contractType;
+                    JToken token = await MakeJsonRequestAsync<JToken>("/linear-swap-api/v1/swap_cross_cancelall", BaseUrl, payload, "POST");
+                }
+                else
+                {
+                    payload["order_id"] = orderId;
+                    payload["symbol"] = symbol;
+                    JToken token = await MakeJsonRequestAsync<JToken>("/linear-swap-api/v1/swap_cross_cancel", BaseUrl, payload, "POST");
+                }
+            }
+            catch (Exception ex)
+            {
+
+                if (ex.ToString().Contains("No orders to cancel"))
+                {
+                    Logger.Debug(ex.ToString());
+                }
+                else
+                {
+                    throw ex;
+                }
+            }
+
+           
         }
 
         private async Task<ExchangeOrderResult> m_OnPlaceOrderAsync(ExchangeOrderRequest order, bool isOpen)
@@ -556,7 +616,7 @@ namespace ExchangeSharp
                 await OnCancelOrderAsync(orderId.ToString(), order.MarketSymbol);
             }
             Dictionary<string, object> payload = await GetNoncePayloadAsync();
-            string addUrl = "/swap-api/v1/swap_order";
+            string addUrl = "/linear-swap-api/v1/swap_cross_order";
             AddOrderToPayload(order, isOpen, payload);
             //HuobiApi api = new HuobiApi(PublicApiKey.ToUnsecureString(), "7f0a0c5c-24fd0bb9-eb64134f-2e1b6");
             //OrderPlaceRequest req = new OrderPlaceRequest();
@@ -574,10 +634,10 @@ namespace ExchangeSharp
             JObject jo;
             try
             {
-                Logger.Debug("m_OnPlaceOrderAsync:" + order.ToString() + "  isOpen:" + isOpen);
+                //Logger.Debug("m_OnPlaceOrderAsync:" + order.ToString() + "  isOpen:" + isOpen);
                 token = await MakeJsonRequestAsync<JObject>(addUrl, BaseUrl, payload, "POST");
                 jo = JsonConvert.DeserializeObject<JObject>(token.Root.ToString());
-                Logger.Debug("m_OnPlaceOrderAsync:" + jo.ToString());
+                //Logger.Debug("m_OnPlaceOrderAsync:" + jo.ToString());
                 return ParseOrder(jo, order);
             }
             catch (System.Exception ex)
@@ -618,7 +678,7 @@ namespace ExchangeSharp
 ]*/
             ExchangeMarginPositionResult poitionR = null;
             var payload = await GetNoncePayloadAsync();
-            JToken token = await MakeJsonRequestAsync<JToken>($"/swap-api/v1/swap_position_info", BaseUrl, payload, "POST");
+            JToken token = await MakeJsonRequestAsync<JToken>($"/linear-swap-api/v1/swap_cross_position_info", BaseUrl, payload, "POST");
             foreach (JToken position in token)
             {
                 GetSymbolAndContractCode(marketSymbol, out string symbol, out string contractCode, out string contractType);  //[0]symbol [1]contract_type
@@ -629,7 +689,7 @@ namespace ExchangeSharp
                     poitionR = new ExchangeMarginPositionResult()
                     {
                         MarketSymbol = marketSymbol,
-                        Amount = 100 * (isBuy ? position["volume"].ConvertInvariant<decimal>() : -position["volume"].ConvertInvariant<decimal>()),
+                        Amount = 1 * (isBuy ? position["volume"].ConvertInvariant<decimal>() : -position["volume"].ConvertInvariant<decimal>()),
                         LiquidationPrice = position["liquidationPrice"].ConvertInvariant<decimal>(),
                         BasePrice = position["cost_open"].ConvertInvariant<decimal>(),
                     };
@@ -669,22 +729,21 @@ namespace ExchangeSharp
             GetSymbolAndContractCode(marketSymbol, out string symbol, out string contractCode, out string contractType);  //[0]symbol [1]contract_type
 
             var payload = await GetNoncePayloadAsync();
-            JToken token = await MakeJsonRequestAsync<JToken>($"/swap-api/v1/swap_position_info", BaseUrl, payload, "POST");
+            JToken token = await MakeJsonRequestAsync<JToken>($"/linear-swap-api/v1/swap_cross_position_info", BaseUrl, payload, "POST");
             int count = 0;
             foreach (JToken position in token)
             {
-
                 if (position["contract_code"].ToStringInvariant().Equals(contractCode))
                 {
                     count++;
                     bool isBuy = position["direction"].ConvertInvariant<string>() == "buy";
                     decimal position_margin = position["position_margin"].ConvertInvariant<decimal>();
                     decimal currentPrice = position["cost_hold"].ConvertInvariant<decimal>();
-                    Logger.Debug("GetOpenPositionAsync:" + position.ToString());
+                    //Logger.Debug("GetOpenPositionAsync:" + position.ToString());
                     poitionR = new ExchangeMarginPositionResult()
                     {
                         MarketSymbol = marketSymbol,
-                        Amount = 100 * position["volume"].ConvertInvariant<decimal>() * (isBuy ? 1 : -1),
+                        Amount = 1 * position["volume"].ConvertInvariant<decimal>() * (isBuy ? 1 : -1),
                         LiquidationPrice = position["liquidationPrice"].ConvertInvariant<decimal>(),
                         BasePrice = position["cost_open"].ConvertInvariant<decimal>(),
                     };
@@ -695,7 +754,7 @@ namespace ExchangeSharp
                         poitionR.LiquidationPrice = Math.Floor(1 / ((1 / poitionR.BasePrice) - (position_margin / Math.Abs(poitionR.Amount))));
                     poitionR.LiquidationPrice = await GetLiquidationPriceAsync(symbol);
                     Logger.Debug("Buy：" + Math.Ceiling(1 / ((1 / poitionR.BasePrice) + (position_margin / Math.Abs(poitionR.Amount)))) + "  Sell:" + Math.Floor(1 / ((1 / poitionR.BasePrice) - (position_margin / Math.Abs(poitionR.Amount)))));
-                    Logger.Debug("GetOpenPositionAsync " + count + poitionR.ToString());
+                    //Logger.Debug("GetOpenPositionAsync " + count + poitionR.ToString());
                     if (count >= 2)
                     {
                         Logger.Debug("双向开仓错误停止程序 ");//可能是限价单导致的
@@ -706,6 +765,72 @@ namespace ExchangeSharp
             }
             return poitionR;
         }
+
+        public override async Task<List<ExchangeMarginPositionResult>> GetOpenPositionDoubleSideAsync(string marketSymbol)
+        {
+            /*
+              *  {
+       "status": "ok",
+       "data": [
+         {
+           "symbol": "BTC",
+           "contract_code": "BTC180914",
+           "contract_type": "this_week",
+           "volume": 1,
+           "available": 0,
+           "frozen": 0.3,
+           "cost_open": 422.78,
+           "cost_hold": 422.78,
+           "profit_unreal": 0.00007096,
+           "profit_rate": 0.07,
+           "profit": 0.97,
+           "position_margin": 3.4,
+           "lever_rate": 10,
+           "direction":"buy",
+           "last_price":7900.17
+          }
+         ],
+      "ts": 158797866555
+     }
+              */
+
+            List<ExchangeMarginPositionResult> positionList = new List<ExchangeMarginPositionResult> ();
+            GetSymbolAndContractCode(marketSymbol, out string symbol, out string contractCode, out string contractType);  //[0]symbol [1]contract_type
+
+            var payload = await GetNoncePayloadAsync();
+            //payload.Add("contract_code", contractType);
+            JToken token = await MakeJsonRequestAsync<JToken>($"/linear-swap-api/v1/swap_cross_position_info", BaseUrl, payload, "POST");
+            int count = 0;
+            foreach (JToken position in token)
+            {
+
+                if (position["contract_code"].ToStringInvariant().Equals(contractCode))
+                {
+                    count++;
+                    bool isBuy = position["direction"].ConvertInvariant<string>() == "buy";
+                    decimal position_margin = position["position_margin"].ConvertInvariant<decimal>();
+                    decimal currentPrice = position["cost_hold"].ConvertInvariant<decimal>();
+                    //Logger.Debug("GetOpenPositionAsync:" + position.ToString());
+                    var positionR = new ExchangeMarginPositionResult()
+                    {
+                        MarketSymbol = marketSymbol,
+                        Amount = 1 * position["volume"].ConvertInvariant<decimal>() * (isBuy ? 1 : -1),
+                        LiquidationPrice = position["liquidationPrice"].ConvertInvariant<decimal>(),
+                        BasePrice = position["cost_open"].ConvertInvariant<decimal>(),
+                    };
+                    decimal openUse = positionR.BasePrice / Math.Abs(positionR.Amount);//单位btc
+                    if (isBuy)
+                        positionR.LiquidationPrice = Math.Ceiling(1 / ((1 / positionR.BasePrice) + (position_margin / Math.Abs(positionR.Amount))));
+                    else
+                        positionR.LiquidationPrice = Math.Floor(1 / ((1 / positionR.BasePrice) - (position_margin / Math.Abs(positionR.Amount))));
+                    positionR.LiquidationPrice = await GetLiquidationPriceAsync(symbol);
+                    Logger.Debug("Buy：" + Math.Ceiling(1 / ((1 / positionR.BasePrice) + (position_margin / Math.Abs(positionR.Amount)))) + "  Sell:" + Math.Floor(1 / ((1 / positionR.BasePrice) - (position_margin / Math.Abs(positionR.Amount)))));
+                    Logger.Debug("GetOpenPositionAsync " + count + positionR.ToString());
+                    positionList.Add(positionR);
+                }
+            }
+            return positionList;
+        }
         public override async Task<ExchangeOrderResult> GetOrderDetailsAsync(string orderId, string marketSymbol = null)
         {
             ExchangeOrderResult poitionR = null;
@@ -714,23 +839,46 @@ namespace ExchangeSharp
 
             payload["order_id"] = orderId;
             payload["client_order_id"] = "";
-            payload["symbol"] = symbol;
-            JToken token = await MakeJsonRequestAsync<JToken>($"/api/v1/contract_order_info", BaseUrl, payload, "POST");
+            payload["contract_code"] = contractType;
+            JToken token = await MakeJsonRequestAsync<JToken>($"/linear-swap-api/v1/swap_cross_order_info", BaseUrl, payload, "POST");
+            Logger.Debug(token.ToString());
             foreach (JToken position in token)
             {
                 //if (position["symbol"].ToStringInvariant().Equals(m_symobl[0]) && position["contract_type"].ToStringInvariant().Equals(m_symobl[1]))
                 if (position["contract_code"].ToStringInvariant().Equals(contractCode))
                 {
                     bool isBuy = position["direction"].ConvertInvariant<string>() == "buy";
+                    decimal status = position["status"].ConvertInvariant<decimal>();
+
                     poitionR = new ExchangeOrderResult()
                     {
                         MarketSymbol = marketSymbol,
-                        Amount = 100 * position["volume"].ConvertInvariant<decimal>(),
-                        AmountFilled = 100 * position["trade_volume"].ConvertInvariant<decimal>(),
+                        Amount = 1 * position["volume"].ConvertInvariant<decimal>(),
+                        AmountFilled = 1 * position["trade_volume"].ConvertInvariant<decimal>(),
                         IsBuy = isBuy,
                         Price = position["price"].ConvertInvariant<decimal>(),
                         AveragePrice = position["trade_avg_price"].ConvertInvariant<decimal>(),
                     };
+                    if (status == 4)
+                    {
+                        poitionR.Result = ExchangeAPIOrderResult.FilledPartially;
+                    }
+                    else if (status == 5)
+                    {
+                        poitionR.Result = ExchangeAPIOrderResult.FilledPartiallyAndCancelled;
+                    }
+                    else if (status == 6)
+                    {
+                        poitionR.Result = ExchangeAPIOrderResult.Filled;
+                    }
+                    else if (status == 7)
+                    {
+                        poitionR.Result = ExchangeAPIOrderResult.Canceled;
+                    }
+                    else
+                    {
+                        poitionR.Result = ExchangeAPIOrderResult.Unknown;
+                    }
                 }
             }
             return poitionR;
@@ -738,7 +886,9 @@ namespace ExchangeSharp
         private async Task<decimal> GetLiquidationPriceAsync(string inSymbol)
         {
             var payload = await GetNoncePayloadAsync();
-            JToken token = await MakeJsonRequestAsync<JToken>($"swap-api/v1/swap_account_info", BaseUrl, payload, "POST");
+            JToken token = await MakeJsonRequestAsync<JToken>($"/linear-swap-api/v1/swap_cross_account_info", BaseUrl, payload, "POST");
+            payload.Add("contract_code", inSymbol);
+            token = token[0]["contract_detail"];
             foreach (JToken position in token)
             {
                 string symbol = position["symbol"].ConvertInvariant<string>();
@@ -762,7 +912,7 @@ namespace ExchangeSharp
             payload["symbol"] = symbol;
 
 
-            JToken token = await MakeJsonRequestAsync<JToken>($"/api/v1/contract_openorders", BaseUrl, payload, "POST");
+            JToken token = await MakeJsonRequestAsync<JToken>($"/linear-swap-api/v1/swap_cross_openorders", BaseUrl, payload, "POST");
             foreach (JToken position in token["orders"])
             {
                 //if (position["symbol"].ToStringInvariant().Equals(m_symobl[0]) && position["contract_type"].ToStringInvariant().Equals(m_symobl[1]))
@@ -772,8 +922,8 @@ namespace ExchangeSharp
                     ExchangeOrderResult poitionR = new ExchangeOrderResult()
                     {
                         MarketSymbol = marketSymbol,
-                        Amount = 100 * position["volume"].ConvertInvariant<decimal>(),
-                        AmountFilled = 100 * position["trade_volume"].ConvertInvariant<decimal>(),
+                        Amount = 1 * position["volume"].ConvertInvariant<decimal>(),
+                        AmountFilled = 1 * position["trade_volume"].ConvertInvariant<decimal>(),
                         IsBuy = isBuy,
                         Price = position["price"].ConvertInvariant<decimal>(),
                         AveragePrice = position["trade_avg_price"].ConvertInvariant<decimal>(),
@@ -810,12 +960,11 @@ namespace ExchangeSharp
         {
             GetSymbolAndContractCode(marketSymbol, out string symbol, out string contractCode, out string contractType);  //[0]symbol [1]contract_type
             var payload = await GetNoncePayloadAsync();
-            payload["symbol"] = symbol;
-            payload["trade_type"] = 0; //order.OrderType.ToStringInvariant();
+            payload["contract_code"] = contractCode;
+            payload["trade_type"] = 0;
             payload["create_date"] = 7;
-            payload["contract_code	"] = contractCode;
 
-            JToken token = await MakeJsonRequestAsync<JToken>($"/api/v1/contract_matchresults", BaseUrl, payload, "POST");
+            JToken token = await MakeJsonRequestAsync<JToken>($"/linear-swap-api/v1/swap_cross_matchresults", BaseUrl, payload, "POST");
             Logger.Debug(token.ToString());
         }
         public override async Task<decimal> GetWalletSummaryAsync(string marketSymbol)
@@ -823,14 +972,15 @@ namespace ExchangeSharp
             string symbol = marketSymbol;
 
             var payload = await GetNoncePayloadAsync();
-            JToken token = await MakeJsonRequestAsync<JToken>($"/api/v1/contract_account_info", BaseUrl, payload, "POST");
+            //payload.Add("contract_code", marketSymbol);
+            JToken token = await MakeJsonRequestAsync<JToken>($"/linear-swap-api/v1/swap_cross_account_info", BaseUrl, payload, "POST");
             foreach (JToken position in token)
             {
-                string _symbol = position["symbol"].ConvertInvariant<string>();
+                string _symbol = position["margin_asset"].ConvertInvariant<string>();
 
                 decimal margin_balance = position["margin_balance"].ConvertInvariant<decimal>();
                 decimal liquidation_price = position["liquidation_price"].ConvertInvariant<decimal>();
-                Logger.Debug(position.ToString());
+                //Logger.Debug(position.ToString());
                 if (symbol.Equals(_symbol))
                 {
                     return margin_balance;
@@ -879,12 +1029,10 @@ namespace ExchangeSharp
     }]
 }
              */
-            string path ="/swap-notification";
-            return ConnectWebSocket(path, (_socket, msg) =>
+            return ConnectWebSocket(string.Empty, (_socket, msg) =>
             {
-                
+
                 var str = msg.ToStringFromUTF8Gzip();
-                Logger.Debug(str);
                 if (str.Contains("ping"))//心跳添加
                 {
                     _socket.SendMessageAsync(str.Replace("ping", "pong"));
@@ -907,56 +1055,39 @@ namespace ExchangeSharp
                         _socket.SendMessageAsync(new { op = "sub", topic = "orders.*" });
                         return Task.CompletedTask;
                     }
-                    if (token["op"] != null && token["op"].ToStringInvariant() == "notify")
-                    { //{"op":"notify","topic":"orders.eth-usd","ts":1589177680145,"symbol":"ETH","contract_code":"ETH-USD","volume":1,"price":188.33,"order_price_type":"opponent","direction":"sell","offset":"close","status":6,"lever_rate":5,"order_id":709408137114894336,"order_id_str":"709408137114894336","client_order_id":null,"order_source":"web","order_type":1,"created_at":1589177680054,"trade_volume":1,"trade_turnover":10.000000000000000000,"fee":-0.000026549142462698,"trade_avg_price":188.33,"margin_frozen":0,"profit":-0.000174230942861840,"trade":[{"trade_id":3256424517,"id":"3256424517-709408137114894336-1","trade_volume":1,"trade_price":188.33,"trade_fee":-0.000026549142462698,"fee_asset":"ETH","trade_turnover":10.000000000000000000,"created_at":1589177680088,"role":"taker"}],"liquidation_type":"0"}
-
-                        var marketSymbol = token["symbol"].ToStringInvariant();
-                        var order = ParseOrder(token);
-                        callback(order);
+                    if (token["table"] == null)
+                    {
                         return Task.CompletedTask;
                     }
-                   
+                    //{ "table":"order","action":"insert","data":[{ "orderID":"b48f4eea-5320-cc06-68f3-d80d60896e31","clOrdID":"","clOrdLinkID":"","account":954891,"symbol":"XBTUSD","side":"Buy","simpleOrderQty":null,"orderQty":100,"price":3850,"displayQty":null,"stopPx":null,"pegOffsetValue":null,"pegPriceType":"","currency":"USD","settlCurrency":"XBt","ordType":"Limit","timeInForce":"GoodTillCancel","execInst":"ParticipateDoNotInitiate","contingencyType":"","exDestination":"XBME","ordStatus":"New","triggered":"","workingIndicator":false,"ordRejReason":"","simpleLeavesQty":null,"leavesQty":100,"simpleCumQty":null,"cumQty":0,"avgPx":null,"multiLegReportingType":"SingleSecurity","text":"Submission from www.bitmex.com","transactTime":"2019-03-09T19:24:21.789Z","timestamp":"2019-03-09T19:24:21.789Z"}]}
+                    var action = token["action"].ToStringInvariant();
+                    JArray data = token["data"] as JArray;
+                    foreach (var t in data)
+                    {
+                        var marketSymbol = t["symbol"].ToStringInvariant();
+                        var order = ParseOrder(t);
+                        callback(order);
+                        //callback(new KeyValuePair<string, ExchangeTrade>(marketSymbol, t.ParseTrade("size", "price", "side", "timestamp", TimestampType.Iso8601, "trdMatchID")));
+                    }
                 }
                 return Task.CompletedTask;
             }, async (_socket) =>
             {
                 //连接中断也不应该删除历史信息
                 //fullOrders.Clear();
-                var payloadJSON = await GeneratePayloadJSON(path);
-                Logger.Debug(payloadJSON);
-                _socket.SendMessageAsync(payloadJSON);
+                var payloadJSON = GeneratePayloadJSON();
+                await _socket.SendMessageAsync(payloadJSON.Result);
             });
 
         }
 
-        private async Task<string> GeneratePayloadJSON(string path)
+        private async Task<string> GeneratePayloadJSON()
         {
-            string s = "2020-05-11T03:03:16";
-            s =DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss");
-            //var dict = new SortedDictionary<string, object>(StringComparer.Ordinal)
-            var dict = new SortedDictionary<string, object>(StringComparer.Ordinal)
-            {
-                ["AccessKeyId"] = PublicApiKey.ToUnsecureString().UrlEncode(),
-                ["SignatureMethod"] = "HmacSHA256",
-                ["SignatureVersion"] = "2",
-                ["Timestamp"] = s.UrlEncode()// Uri.EscapeDataString(s)
-            };
-            string msg = CryptoUtility.GetFormForPayloadNotChange(dict, false);
-            var message = "GET\n" +
-                "api.hbdm.com\n" +
-                //$"/notification\n"
-                $"{path}\n"
-                +msg;
-//             message = "GET\n" +
-//                 "api.hbdm.com\n" +
-//                 $"/notification\n"
-//            + "AccessKeyId=3210eca3-b1rkuf4drg-b2d2763e-04899&SignatureMethod=HmacSHA256&SignatureVersion=2&Timestamp=2020-05-11T03%3A03%3A16";
-
-           // Logger.Debug("message:" + message);
-            var signature = CryptoUtility.SHA256SignBase64(message, PrivateApiKey.ToUnsecureBytesUTF8());
-            //Logger.Debug("signature1:" + signature);
-            //signature = Uri.EscapeDataString(signature);//signature.UrlEncode();
-            //Logger.Debug("signature2:" + signature);
+            object expires = await GenerateNonceAsync();
+            var message = $"GET\n" +
+                $"api.hbdm.com\n" +
+                $"/notification\n";
+            var signature = CryptoUtility.SHA256Sign(message, PrivateApiKey.ToUnsecureString());
             Dictionary<string, object> payload = new Dictionary<string, object>
                 {
                     { "op", "auth"},
@@ -964,18 +1095,10 @@ namespace ExchangeSharp
                     { "AccessKeyId",  PublicApiKey.ToUnsecureString()},
                     { "SignatureMethod", "HmacSHA256"},
                     { "SignatureVersion", "2"},
-                    { "Timestamp",s},
-                    { "Signature", signature },
-                    { "cid", "111" }
+                    { "Timestamp", expires},
+                    { "Signature", signature }
                 };
-            //Logger.Debug(PrivateApiKey.ToUnsecureString());
             return CryptoUtility.GetJsonForPayload(payload);
-        }
-
-        private string Encode(string s)
-        {
-            return s.Replace(":", "%A");
-         //   return System.Web.HttpUtility.UrlEncode(s, System.Text.UTF8Encoding.UTF8).Replace("\\+", "%20");
         }
         private async Task<Dictionary<string, string>> OnGetAccountsAsync()
         {
@@ -1051,8 +1174,8 @@ namespace ExchangeSharp
         }
         /// <summary>
         ///symbol  string  true    "BTC","ETH"...
-        ///contract_type string  true    合约类型("this_week":当周 "next_week":下周 "quarter":季度)
-        ///contract_code string  true    BTC180914
+        ///swap_type string  true    合约类型("this_week":当周 "next_week":下周 "quarter":季度)
+        ///swap_code string  true    BTC180914
         ///client_order_id long    false   客户自己填写和维护，这次一定要大于上一次
         ///price decimal true    价格
         ///volume long    true    委托数量(张)
@@ -1078,12 +1201,12 @@ namespace ExchangeSharp
             payload["volume"] = (int)order.Amount;
             payload["direction"] = order.IsBuy ? "buy" : "sell"; ;
             payload["offset"] = isOpen ? "open" : "close";
-            payload["lever_rate"] = 5;
-            payload["order_price_type"] = order.OrderType == OrderType.Limit ? "post_only" : "optimal_20";
-            foreach (var item in payload)
-            {
-                Logger.Debug(item.Key + ":" + item.Value);
-            }
+            payload["lever_rate"] = 50;
+            payload["order_price_type"] = order.OrderType == OrderType.Limit ? "limit" : "optimal_20";
+//             foreach (var item in payload)
+//             {
+//                 Logger.Debug(item.Key + ":" + item.Value);
+//             }
         }
         private Dictionary<string, ExchangeOrderResult> fullOrders = new Dictionary<string, ExchangeOrderResult>();
         private ExchangeOrderResult ParseOrder(JObject token, ExchangeOrderRequest orderRequest)
@@ -1186,18 +1309,18 @@ namespace ExchangeSharp
 }
             */
 
-            Logger.Debug("ParseOrder:" + token.ToString());
+            //Logger.Debug("ParseOrder:" + token.ToString());
             ExchangeOrderResult fullOrder;
             lock (fullOrders)
             {
                 bool had = fullOrders.TryGetValue(token["order_id"].ToStringInvariant(), out fullOrder);
                 ExchangeOrderResult result = new ExchangeOrderResult()
                 {
-                    Amount = token["volume"].ConvertInvariant<decimal>() * 100,
-                    AmountFilled = token["trade_volume"].ConvertInvariant<decimal>() * 100,
+                    Amount = token["volume"].ConvertInvariant<decimal>() * 1,
+                    AmountFilled = token["trade_volume"].ConvertInvariant<decimal>() * 1,
                     Price = token["price"].ConvertInvariant<decimal>(),
                     IsBuy = token["direction"].ToStringInvariant().EqualsWithOption("buy"),
-                    OrderDate = token["ts"].ConvertInvariant<long>().ToDateTime(),
+                    OrderDate = token["created_at"].ConvertInvariant<DateTime>(),
                     OrderId = token["order_id"].ToStringInvariant(),
                     MarketSymbol = token["contract_code"].ToStringInvariant(),
                     AveragePrice = token["trade_avg_price"].ConvertInvariant<decimal>(),
@@ -1220,9 +1343,12 @@ namespace ExchangeSharp
                     result.IsBuy = token["direction"].ToStringInvariant().EqualsWithOption("buy");
                     fullOrder.IsBuy = result.IsBuy;
                 }
+
                 if (result.Result != ExchangeAPIOrderResult.Filled)//改为成交后不修改成其他状态
                 {
                     string status = token["status"].ToStringInvariant();
+
+
                     switch (token["status"].ToStringInvariant())
                     {
                         case "3"://已经提交
@@ -1338,10 +1464,33 @@ namespace ExchangeSharp
         }
         #endregion
 
+        public override async Task<IEnumerable<ExchangeTrade>> GetRecentTradesAsync(string marketSymbol)
+        {
+            GetSymbolAndContractCode(marketSymbol, out string symbol, out string contractCode, out string contractType);
+            string url = $"/linear-swap-ex/market/trade?contract_code={contractType}";
+            
+            JToken allCandles = await MakeJsonRequestAsync<JToken>(url, BaseUrl, null);
+            List<ExchangeTrade> trades = new List<ExchangeTrade>();
+            foreach (var data in allCandles["tick"]["data"])
+            {
+                ExchangeTrade trade = new ExchangeTrade()
+                { 
+                    Price = Convert.ToDecimal(data["price"]),
+                    Amount = Convert.ToDecimal(data["amount"])
+
+                };
+                trades.Add(trade);
+            }
+
+
+            return trades;
+        }
+
+
         public override async Task<IEnumerable<MarketCandle>> GetCandlesAsync(string marketSymbol, int periodSeconds, DateTime? startDate = null, DateTime? endDate = null, int? limit = null)
         {
             //marketSymbol = NormalizeMarketSymbol(marketSymbol);
-            return await OnGetCandlesAsync(marketSymbol, periodSeconds, startDate, endDate, limit);
+            return await OnGetCandlesAsync(marketSymbol, periodSeconds, startDate, endDate, limit) ;
         }
         /// <summary>
         /// symbol  true    string 合约名称        如"BTC_CW"表示BTC当周合约，"BTC_NW"表示BTC次周合约，"BTC_CQ"表示BTC季度合约
@@ -1388,7 +1537,7 @@ namespace ExchangeSharp
   "ts": 1529908345313
 },
              */
-
+            GetSymbolAndContractCode(marketSymbol, out string symbol, out string contractCode, out string contractType);
             List<MarketCandle> candles = new List<MarketCandle>();
             string size = "150";
 
@@ -1397,18 +1546,70 @@ namespace ExchangeSharp
                 // default is 150, max: 2000
                 size = (limit.Value.ToStringInvariant());
             }
-            string periodString = PeriodSecondsToString(periodSeconds);
-            string url = $"/market/history/kline?period={periodString}&size={size}&symbol={marketSymbol}";
 
+
+            string periodString = PeriodSecondsToString(periodSeconds);
+            string url = $"/linear-swap-ex/market/history/kline?period={periodString}&contract_code={contractType}";
+            if (startDate != null && endDate != null)
+            {
+                double startDateSeconds = startDate.Value.UnixTimestampFromDateTimeSeconds();
+                double endDateSeconds = endDate.Value.UnixTimestampFromDateTimeSeconds();
+                url += "&from="+ startDateSeconds;
+                url += "&to=" + endDateSeconds;
+                size =""+(int)(endDateSeconds-startDateSeconds)/ periodSeconds;
+            }
+            else
+            {
+                url += $"&size={ size}";
+            }
+            
             JToken allCandles = await MakeJsonRequestAsync<JToken>(url, BaseUrl, null);
+            //Logger.Debug(allCandles.ToString());
             foreach (var token in allCandles)
             {
-                candles.Add(this.ParseCandle(token, marketSymbol, periodSeconds, "open", "high", "low", "close", "id", TimestampType.UnixSeconds, null, "vol"));
+                candles.Add(ParseCandle(token, contractType, periodSeconds, "open", "high", "low", "close", "id", TimestampType.UnixSeconds, null, "vol"));
             }
             return candles;
         }
-        
+
+        private MarketCandle ParseCandle( JToken token, string marketSymbol, int periodSeconds, object openKey, object highKey, object lowKey,
+            object closeKey, object timestampKey, TimestampType timestampType, object baseVolumeKey, object quoteVolumeKey = null, object weightedAverageKey = null)
+        {
+            MarketCandle candle = new MarketCandle
+            {
+                ClosePrice = token[closeKey].ConvertInvariant<decimal>(),
+                ExchangeName = ExchangeName.HBDMLinearSwap,
+                HighPrice = token[highKey].ConvertInvariant<decimal>(),
+                LowPrice = token[lowKey].ConvertInvariant<decimal>(),
+                Name = marketSymbol,
+                OpenPrice = token[openKey].ConvertInvariant<decimal>(),
+                PeriodSeconds = periodSeconds,
+                Timestamp = CryptoUtility.ParseTimestamp(token[timestampKey], timestampType)//火币返回中国时间需要-8到utc
+            };
+
+            token.ParseVolumes(baseVolumeKey, quoteVolumeKey, candle.ClosePrice, out decimal baseVolume, out decimal convertVolume);
+            candle.BaseCurrencyVolume = (double)baseVolume;
+            candle.QuoteCurrencyVolume = (double)convertVolume;
+            if (weightedAverageKey != null)
+            {
+                candle.WeightedAverage = token[weightedAverageKey].ConvertInvariant<decimal>();
+            }
+            candle.PeriodSeconds = token[timestampKey].ConvertInvariant<int>();
+            return candle;
+        }
+        public override async Task<IEnumerable<KeyValuePair<string, ExchangeTicker>>> GetTickersAsync()
+        {
+            Dictionary<string, object> payload = await GetNoncePayloadAsync();
+            payload.Add("contract_code", "BNB-USDT");
+            JToken allCandles = await MakeJsonRequestAsync<JToken>("/linear-swap-api/v1/swap_available_level_rate", BaseUrl, payload, "POST");
+            Logger.Debug(allCandles.ToString());
+            return null;
+        }
+        public override bool ErrorNeedNotCareError(Exception ex)
+        {
+            return ex.ToString().Contains("502 Bad Gateway") || ex.ToString().Contains("502 Bad Gateway") || ex.ToString().Contains("403 Forbidden") || ex.ToString().Contains("Bad Gateway") || ex.ToString().Contains("Bad Gateway")
+                || ex.ToString().Contains(@"""err_code"": 1078");//交割中不能交易
+        }//"err_code": 1078
     }
-    
-    public partial class ExchangeName { public const string HBDMSwap = "HBDMSwap"; }
+    public partial class ExchangeName { public const string HBDMLinearSwap = "HBDMLinearSwap"; }
 }

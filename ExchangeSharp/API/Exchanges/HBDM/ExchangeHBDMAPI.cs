@@ -683,6 +683,71 @@ namespace ExchangeSharp
             }
             return poitionR;
         }
+
+        public override async Task<List<ExchangeMarginPositionResult>> GetOpenPositionDoubleSideAsync(string marketSymbol)
+        {
+            /*
+              *  {
+       "status": "ok",
+       "data": [
+         {
+           "symbol": "BTC",
+           "contract_code": "BTC180914",
+           "contract_type": "this_week",
+           "volume": 1,
+           "available": 0,
+           "frozen": 0.3,
+           "cost_open": 422.78,
+           "cost_hold": 422.78,
+           "profit_unreal": 0.00007096,
+           "profit_rate": 0.07,
+           "profit": 0.97,
+           "position_margin": 3.4,
+           "lever_rate": 10,
+           "direction":"buy",
+           "last_price":7900.17
+          }
+         ],
+      "ts": 158797866555
+     }
+              */
+
+            List< ExchangeMarginPositionResult> positionList = null;
+            GetSymbolAndContractCode(marketSymbol, out string symbol, out string contractCode, out string contractType);  //[0]symbol [1]contract_type
+
+            var payload = await GetNoncePayloadAsync();
+            JToken token = await MakeJsonRequestAsync<JToken>($"/api/v1/contract_position_info", BaseUrl, payload, "POST");
+            int count = 0;
+            foreach (JToken position in token)
+            {
+
+                if (position["contract_code"].ToStringInvariant().Equals(contractCode))
+                {
+                    count++;
+                    bool isBuy = position["direction"].ConvertInvariant<string>() == "buy";
+                    decimal position_margin = position["position_margin"].ConvertInvariant<decimal>();
+                    decimal currentPrice = position["cost_hold"].ConvertInvariant<decimal>();
+                    Logger.Debug("GetOpenPositionAsync:" + position.ToString());
+                    var positionR = new ExchangeMarginPositionResult()
+                    {
+                        MarketSymbol = marketSymbol,
+                        Amount = 100 * position["volume"].ConvertInvariant<decimal>() * (isBuy ? 1 : -1),
+                        LiquidationPrice = position["liquidationPrice"].ConvertInvariant<decimal>(),
+                        BasePrice = position["cost_open"].ConvertInvariant<decimal>(),
+                    };
+                    decimal openUse = positionR.BasePrice / Math.Abs(positionR.Amount);//单位btc
+                    if (isBuy)
+                        positionR.LiquidationPrice = Math.Ceiling(1 / ((1 / positionR.BasePrice) + (position_margin / Math.Abs(positionR.Amount))));
+                    else
+                        positionR.LiquidationPrice = Math.Floor(1 / ((1 / positionR.BasePrice) - (position_margin / Math.Abs(positionR.Amount))));
+                    positionR.LiquidationPrice = await GetLiquidationPriceAsync(symbol);
+                    Logger.Debug("Buy：" + Math.Ceiling(1 / ((1 / positionR.BasePrice) + (position_margin / Math.Abs(positionR.Amount)))) + "  Sell:" + Math.Floor(1 / ((1 / positionR.BasePrice) - (position_margin / Math.Abs(positionR.Amount)))));
+                    Logger.Debug("GetOpenPositionAsync " + count + positionR.ToString());
+                    positionList.Add(positionR);
+                }
+            }
+            return positionList;
+        }
         public override async Task<ExchangeOrderResult> GetOrderDetailsAsync(string orderId, string marketSymbol = null)
         {
             ExchangeOrderResult poitionR = null;
