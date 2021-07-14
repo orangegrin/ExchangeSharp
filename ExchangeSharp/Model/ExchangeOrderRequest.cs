@@ -89,6 +89,11 @@ namespace ExchangeSharp
         {
             return $"{"MarketSymbol:"}{MarketSymbol}{IsBuy}{"Amount:"}{Amount}{"at StopPrice:"}{StopPrice}{"ExtraParameters:"}{ExtraParameters.ToString()}";
         }
+
+        public static implicit operator ExchangeOrderRequest(ExchangeOrderResult v)
+        {
+            throw new NotImplementedException();
+        }
     }
 
     /// <summary>

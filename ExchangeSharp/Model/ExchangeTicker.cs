@@ -50,6 +50,15 @@ namespace ExchangeSharp
         /// The last trade purchase price
         /// </summary>
         public decimal Last { get; set; }
+        /// <summary>
+        /// The last trade purchase price
+        /// </summary>
+        public decimal MarkPrice { get; set; }
+        /// <summary>
+        /// The last trade purchase price
+        /// </summary>
+        public decimal IndexPrice { get; set; }
+
 
         /// <summary>
         /// Volume info

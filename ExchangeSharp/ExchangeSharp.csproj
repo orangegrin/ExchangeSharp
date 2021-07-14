@@ -1,7 +1,8 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net471;netstandard2.0;netcoreapp2.0;netcoreapp2.1</TargetFrameworks>
+    <!--<TargetFrameworks>net471;netstandard2.0;netcoreapp2.0;netcoreapp2.1</TargetFrameworks>-->
+    <TargetFramework>netcoreapp2.1</TargetFramework>
     <Copyright>Copyright 2017, Digital Ruby, LLC - www.digitalruby.com</Copyright>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
@@ -136,10 +137,6 @@
     <None Update="nlog.config">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-  </ItemGroup>
-
-  <ItemGroup>
-    <Folder Include="API\Exchanges\ZBG\" />
   </ItemGroup>
 
   <PropertyGroup Condition="'$(TargetFramework)' == 'net471'">

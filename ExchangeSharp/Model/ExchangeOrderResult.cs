@@ -12,6 +12,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 namespace ExchangeSharp
 {
+    using Newtonsoft.Json;
     using System;
 
     /// <summary>Result of an exchange order</summary>
@@ -22,7 +23,7 @@ namespace ExchangeSharp
 
         /// <summary>Result of the order</summary>
         public ExchangeAPIOrderResult Result { get; set; }
-
+        [JsonIgnore]
         /// <summary>Message if any</summary>
         public string Message { get; set; }
 
@@ -40,10 +41,10 @@ namespace ExchangeSharp
         /// <summary>Price per unit in the ratio of base/market currency.
         /// E.g. 0.000342 ADA/ETH</summary>
         public decimal AveragePrice { get; set; }
-
+        [JsonIgnore]
         /// <summary>Order datetime in UTC</summary>
         public DateTime OrderDate { get; set; }
-
+        [JsonIgnore]
         /// <summary>Fill datetime in UTC</summary>
         public DateTime FillDate { get; set; }
     
@@ -56,11 +57,11 @@ namespace ExchangeSharp
         /// <summary>The fees on the order (not a percent).
         /// E.g. 0.0025 ETH</summary>
         public decimal Fees { get; set; }
-
+        [JsonIgnore]
         /// <summary>The currency the fees are in. 
         /// If not set, this is probably the base currency</summary>
         public string FeesCurrency { get; set; }
-
+        [JsonIgnore]
         /// <summary>The id of the trade if this is only one trade out of the order.</summary>
         public string TradeId { get; set; }
         /// <summary>
@@ -94,7 +95,7 @@ namespace ExchangeSharp
         /// <returns>A string that represents this instance.</returns>
         public override string ToString()
         {
-            return $"[{OrderDate.AddHours(8)}], {(IsBuy ? "Buy" : "Sell")} {AmountFilled} of {Amount} {MarketSymbol} {Result} at {Price}, fees paid {Fees} {FeesCurrency}";
+            return $"[{OrderDate.AddHours(8)}], {(IsBuy ? "Buy" : "Sell")} {AmountFilled} of {Amount} {MarketSymbol} {Result} at {Price}, fees paid {Fees} {FeesCurrency} OrderId {OrderId} AveragePrice {AveragePrice}";
 
         }
         /// <summary>

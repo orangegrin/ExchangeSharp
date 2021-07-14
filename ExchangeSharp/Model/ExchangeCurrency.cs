@@ -52,5 +52,9 @@ namespace ExchangeSharp
 
         /// <summary>Minimum number of confirmations before deposit will post at the exchange</summary>
         public int MinConfirmations { get; set; }
+
+        public decimal bid1;
+
+        public decimal ask1;
     }
 }

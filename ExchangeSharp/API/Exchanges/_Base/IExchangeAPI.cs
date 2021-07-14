@@ -123,6 +123,7 @@ namespace ExchangeSharp
 
         /// <summary>
         /// Get candles (open, high, low, close)
+        /// 返回由老 到新排序的 蜡烛图
         /// </summary>
         /// <param name="marketSymbol">Market symbol to get candles for</param>
         /// <param name="periodSeconds">Period in seconds to get candles for. Use 60 for minute, 3600 for hour, 3600*24 for day, 3600*24*30 for month.</param>
@@ -155,7 +156,12 @@ namespace ExchangeSharp
         /// <param name="order">Order request</param>
         /// <returns>Order result and message string if any</returns>
         Task<ExchangeOrderResult> PlaceOrderAsync(ExchangeOrderRequest order);
-
+        /// <summary>
+        /// Place an order ，set open or close
+        /// </summary>
+        /// <param name="order">Order request</param>
+        /// <returns>Order result and message string if any</returns>
+        Task<ExchangeOrderResult> PlaceOrderDoubleSideAsync(ExchangeOrderRequest order,bool isOpen);
         /// <summary>
         /// Place bulk orders
         /// </summary>
@@ -211,6 +217,13 @@ namespace ExchangeSharp
         /// <param name="marketSymbol">Market Symbol</param>
         /// <returns>Open margin position result</returns>
         Task<ExchangeMarginPositionResult> GetOpenPositionAsync(string marketSymbol);
+        /// <summary>
+        /// Get open margin position ,double side 
+        /// </summary>
+        /// <param name="marketSymbol">Market Symbol</param>
+        /// <returns>Open margin position buy side and sell side</returns>
+        Task<List<ExchangeMarginPositionResult>> GetOpenPositionDoubleSideAsync(string marketSymbol);
+
 
         /// <summary>
         /// Close a margin position
@@ -224,6 +237,11 @@ namespace ExchangeSharp
         /// </summary>
         /// <returns>The customer trading fees</returns>
         Task<Dictionary<string, decimal>> GetFeesAync();
+        /// <summary>
+        /// Get funding rate 
+        /// </summary>
+        /// <returns>The customer trading fees</returns>
+        Task<List<FundingPayment>> GetFundingRatesAsync(string markeySymbol, DateTime start, DateTime end);
 
         #endregion REST
 
@@ -275,5 +293,8 @@ namespace ExchangeSharp
         decimal AmountComplianceCheck(decimal amount);
 
         #endregion util functions
+
+
+        
     }
 }

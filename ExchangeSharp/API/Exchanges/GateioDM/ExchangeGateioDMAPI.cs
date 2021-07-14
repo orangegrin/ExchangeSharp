@@ -23,7 +23,8 @@ namespace ExchangeSharp
         /// for test 
         /// </summary>
         //public string BaseUrlV1 { get; set; } = "https://fx-api-testnet.gateio.ws/api/v4";
-        public string BaseUrlV1 { get; set; } = " https://fx-api.gateio.ws/api/v4";
+        //public string BaseUrlV1 { get; set; } = "https://api.gateio.ws/api/v4";//"https://api.gatecn.io/api/v4";
+        public string BaseUrlV1 { get; set; } = "https://fx-api.gateio.ws/api/v4";
 
         /// <summary>
         /// for test
@@ -34,6 +35,7 @@ namespace ExchangeSharp
 
         private const decimal ETH_UNIT = 0.01m;
         private const decimal BTC_UNIT = 0.0001m;
+        private const decimal AMPL_UNIT = 1m;
         public bool IsMargin { get; set; }
         public string SubType { get; set; }
 
@@ -44,7 +46,7 @@ namespace ExchangeSharp
         private Dictionary<string, ExchangeOrderResult> currentPostionDic = null;
         public ExchangeGateioDMAPI()
         {
-            RequestContentType = "application/x-www-form-urlencoded";
+            RequestContentType = "application/json";//"application/x-www-form-urlencoded";
             NonceStyle = NonceStyle.UnixSeconds;
             MarketSymbolSeparator = "_";//string.Empty;
             MarketSymbolIsUppercase = false;
@@ -74,6 +76,10 @@ namespace ExchangeSharp
             {
                 return inNum / ETH_UNIT;
             }
+            else if (marketSymbol.Contains("AMPL"))
+            {
+                return inNum / AMPL_UNIT;
+            }
             throw new Exception("Can not find contractCode:" + marketSymbol);
         }
         private decimal GetRestorePerCount(decimal inNum, string marketSymbol)
@@ -87,7 +93,11 @@ namespace ExchangeSharp
             {
                 return inNum * ETH_UNIT;
             }
-            
+            else if (marketSymbol.Contains("AMPL"))
+            {
+                return inNum * AMPL_UNIT;
+            }
+
             throw new Exception("Can not find contractCode:" + marketSymbol);
             return 0;
         }
@@ -106,7 +116,7 @@ namespace ExchangeSharp
         //1min, 5min, 15min, 30min, 60min,4hour,1day, 1mon
         public override string PeriodSecondsToString(int seconds)
         {
-            return CryptoUtility.SecondsToPeriodStringLong(seconds);
+            return CryptoUtility.SecondsToPeriodStringLong(seconds,min:"m",hour:"h",day:"d");
         }
 
         public override decimal AmountComplianceCheck(decimal amount)
@@ -290,8 +300,105 @@ namespace ExchangeSharp
             return web;
         }
 
+        protected override IWebSocket OnGetTickersWebSocket(Action<IReadOnlyCollection<KeyValuePair<string, ExchangeTicker>>> tickers, params string[] marketSymbols)
+        {
+            Timer pingTimer = null;
+            if (tickers == null) return null;
+            if (marketSymbols.Length>1)
+            {
+                return null;
+            }
+            marketSymbols = marketSymbols == null || marketSymbols.Length == 0 ? GetTickersAsync().Sync().Select(t => t.Key).ToArray() : marketSymbols;
+            return ConnectWebSocket("/btc", async (_socket, msg) =>
+            {
+//             {
+//                 "time": 1609317629,
+//   "channel": "futures.tickers",
+//   "event": "update",
+//   "error": null,
+//   "result": [
+//     {
+//                     "contract": "ETH_USDT",
+//       "last": "732.75",
+//       "change_percentage": "3.04",
+//       "funding_rate": "0.001025",
+//       "mark_price": "732.39",
+//       "index_price": "731.7",
+//       "total_size": "1390747",
+//       "volume_24h": "8144812",
+//       "quanto_base_rate": "",
+//       "funding_rate_indicative": "0.0001",
+//       "volume_24h_quote": "59681109",
+//       "volume_24h_settle": "59681109",
+//       "volume_24h_base": "81448"
+//     }
+//   ]
+// }
+        var str = msg.ToStringFromUTF8();
+                JToken token = JToken.Parse(str);
+                if (token.ToString().Contains("ping") || token.ToString().Contains("pong"))
+                {
+                    //Logger.Debug(token.ToString());
+                }
+                Logger.Debug(token.ToString());
+                if (token["status"] != null)
+                {
+                    return;
+                }
+                else if (token["ping"] != null)
+                {
+                    await _socket.SendMessageAsync(str.Replace("ping", "pong"));
+                    return;
+                }
+                var _event = token["event"].ToString();
+                ExchangeOrderBook book = new ExchangeOrderBook();
+                var price = 0m;
+                var size = 0m;
 
+                var result = token["result"];
+                if (_event.Equals("subscribe"))
+                {
+                    if (pingTimer == null)
+                    {
+                        pingTimer = new Timer(callback: async s => await _socket.SendMessageAsync(new { time = Convert.ToInt32(token["time"].ToString()), channel = "futures.ping" }),
+                            state: null, dueTime: 0, period: 15000); // send a ping every 15 seconds
+                    }
+                }
+                else 
+                {
+                    foreach (var item in result)
+                    {
 
+                        string marketSymbol = item["contract"].ToStringInvariant();
+                        tickers.Invoke(new List<KeyValuePair<string, ExchangeTicker>>
+                        {
+                            new KeyValuePair<string, ExchangeTicker>(marketSymbol, this.ParseTicker(token: item,marketSymbol: marketSymbol,bidKey:"last",askKey:"last",lastKey:"last",baseCurrencyKey:"last",baseVolumeKey:"volume_24h_quote", markPrice:"mark_price",indexPrice:"index_price"))
+                        });
+
+                    }
+                   
+                }
+                return ;
+            }, async (_socket) =>
+            {
+                foreach (string symbol in marketSymbols)
+                {
+                    //long id = System.Threading.Interlocked.Increment(ref webSocketId);
+                    //var normalizedSymbol = NormalizeMarketSymbol(symbol);
+
+                    //string channel = $"futures.order_book";
+                    //object o = new { time = id.ToStringInvariant(), channel = channel, @event = "subscribe", payload = "[\"" + symbol + @""", ""20"", ""0""]" };
+                    string s = @"{""time"" : 123456, ""channel"" : ""futures.tickers"", ""event"": ""subscribe"", ""payload"" : [""" + symbol + @"""]}";
+                    Logger.Debug(s.ToString());
+                    await _socket.SendMessageAsync(s);
+                }
+            }, async (_socket) =>
+            {
+                pingTimer.Dispose();
+                pingTimer = null;
+
+            });
+        }
         protected override IWebSocket OnGetOrderDetailsWebSocketBySymbols(Action<ExchangeOrderResult> callback,params string[] marketSymbols)
         {
             Timer pingTimer = null;
@@ -776,10 +883,16 @@ namespace ExchangeSharp
 
         public override async Task<decimal> GetWalletSummaryAsync(string marketSymbol)
         {
-            GetSymbolAndContractCode(marketSymbol, out string symbol, out string contractCode);
+            if (string.IsNullOrEmpty(marketSymbol))
+            {
+                Logger.Error("symbol can not be null");
+                throw new Exception("symbol can not be null");
+            }
+            //GetSymbolAndContractCode(marketSymbol, out string symbol, out string contractCode);
             Dictionary<string, object> payload = await GetNoncePayloadAsync();
-            string addUrl = string.Format("/futures/{0}/accounts", contractCode.ToLower());
-            
+           // string addUrl = string.Format("/futures/{0}/accounts", marketSymbol.ToLower());
+            string addUrl = string.Format("/futures/{0}/accounts", marketSymbol.ToLower());
+            //addUrl = "https://api.gatecn.io/api/v4/futures/usdt/accounts"
             JToken token = await MakeJsonRequestAsync<JToken>(addUrl, BaseUrlV1, payload, "GET");
 
             return token["total"].ConvertInvariant<decimal>();
@@ -871,7 +984,7 @@ namespace ExchangeSharp
             JObject token = await MakeJsonRequestAsync<JObject>(addUrl, BaseUrlV1, payload, "GET");
 
             JObject jo = JsonConvert.DeserializeObject<JObject>(token.Root.ToString());
-            return ParasePosition(jo);
+            return ParasePosition(jo, marketSymbol);
         }
 
         private async Task<long> m_OnPlacePriceTriggeredOrder(ExchangeOrderRequest order)
@@ -1032,8 +1145,16 @@ namespace ExchangeSharp
             {
                 payload["execInst"] = execInst;
             }
+
+            if (order.ExtraParameters.TryGetValue("reduce_only", out var reduce_only))
+            {
+                payload["reduce_only"] = reduce_only;
+            }
         }
         private Dictionary<string, ExchangeOrderResult> fullOrders = new Dictionary<string, ExchangeOrderResult>();
+
+
+
         private ExchangeOrderResult ParseOrder(JObject token,ExchangeOrderRequest orderRequest=null)
         {
             /*
@@ -1060,9 +1181,9 @@ namespace ExchangeSharp
   "finish_as": "cancelled"
 }
             */
-            
-           
 
+
+            Logger.Info("ParseOrderParseOrderParseOrder:" + token.ToString());
             ExchangeOrderResult fullOrder;
             lock (fullOrders)
             {
@@ -1099,8 +1220,8 @@ namespace ExchangeSharp
                 {
                     fullOrder = result;
                 }
+                Logger.Info("3ExchangeAPIOrderResult:" + result.Result + ":" + token.ToString());
 
-               
                 // http://www.onixs.biz/fix-dictionary/5.0.SP2/tagNum_39.html
                 if (result.Result != ExchangeAPIOrderResult.Filled)//改为成交后不修改成其他状态
                 {
@@ -1108,6 +1229,8 @@ namespace ExchangeSharp
                     if (token["finish_as"] != null && !string.IsNullOrEmpty(token["finish_as"].ToString()))
                     {
                         string statu = token["finish_as"].ToString();
+
+
                         if (statu.Equals("filled"))
                         {
                             if (result.AmountFilled == 0)
@@ -1140,30 +1263,62 @@ namespace ExchangeSharp
                             }
                             Logger.Info("4ExchangeAPIOrderResult:" + result.Result + ":" + token.ToString());
                         }
-//                         else if (statu.Equals("liquidated"))
-//                         {
-//                             if (result.Amount == result.AmountFilled)
-//                                 result.Result = ExchangeAPIOrderResult.Filled;
-//                             else
-//                                 result.Result = ExchangeAPIOrderResult.FilledPartially;
-// 
-//                         }
-//                         else if (statu.Equals("ioc"))
-//                         {
-//                             if (result.Amount == result.AmountFilled)
-//                                 result.Result = ExchangeAPIOrderResult.Filled;
-//                             else
-//                                 result.Result = ExchangeAPIOrderResult.FilledPartially;
-// 
-//                         }
-//                         else if (statu.Equals("reduce_only"))
-//                         {
-//                             if (result.Amount == result.AmountFilled)
-//                                 result.Result = ExchangeAPIOrderResult.Filled;
-//                             else
-//                                 result.Result = ExchangeAPIOrderResult.FilledPartially;
-// 
-//                         }
+                        else if (statu.Equals("_new"))
+                        {
+                            if (result.AmountFilled == 0)
+                            {
+                                result.Result = ExchangeAPIOrderResult.Pending;
+                            }
+                            else if (result.Amount == result.AmountFilled)
+                            {
+                                result.Result = ExchangeAPIOrderResult.Filled;
+                            }
+                            else if (result.AmountFilled > 0)
+                            {
+                                result.Result = ExchangeAPIOrderResult.FilledPartially;
+                            }
+                            Logger.Info("5ExchangeAPIOrderResult:" + result.Result + ":" + token.ToString());
+                        }
+                        else if (statu.Equals("_update"))
+                        {
+                            if (result.AmountFilled == 0)
+                            {
+                                result.Result = ExchangeAPIOrderResult.Pending;
+                            }
+                            else if (result.Amount == result.AmountFilled)
+                            {
+                                result.Result = ExchangeAPIOrderResult.Filled;
+                            }
+                            else if (result.AmountFilled > 0)
+                            {
+                                result.Result = ExchangeAPIOrderResult.FilledPartially;
+                            }
+                            Logger.Info("6ExchangeAPIOrderResult:" + result.Result + ":" + token.ToString());
+                        }
+                        //                         else if (statu.Equals("liquidated"))
+                        //                         {
+                        //                             if (result.Amount == result.AmountFilled)
+                        //                                 result.Result = ExchangeAPIOrderResult.Filled;
+                        //                             else
+                        //                                 result.Result = ExchangeAPIOrderResult.FilledPartially;
+                        // 
+                        //                         }
+                        //                         else if (statu.Equals("ioc"))
+                        //                         {
+                        //                             if (result.Amount == result.AmountFilled)
+                        //                                 result.Result = ExchangeAPIOrderResult.Filled;
+                        //                             else
+                        //                                 result.Result = ExchangeAPIOrderResult.FilledPartially;
+                        // 
+                        //                         }
+                        //                         else if (statu.Equals("reduce_only"))
+                        //                         {
+                        //                             if (result.Amount == result.AmountFilled)
+                        //                                 result.Result = ExchangeAPIOrderResult.Filled;
+                        //                             else
+                        //                                 result.Result = ExchangeAPIOrderResult.FilledPartially;
+                        // 
+                        //                         }
                     }
                     else
                     {
@@ -1247,7 +1402,7 @@ namespace ExchangeSharp
             }
         }
        
-        private ExchangeMarginPositionResult ParasePosition(JObject position)
+        private ExchangeMarginPositionResult ParasePosition(JObject position,string marketSymbol)
         {
             ExchangeMarginPositionResult postionRet = new ExchangeMarginPositionResult
             {
@@ -1256,6 +1411,8 @@ namespace ExchangeSharp
                 LiquidationPrice = position["liq_price"].ConvertInvariant<decimal>(),
                 BasePrice = position["entry_price"].ConvertInvariant<decimal>(),
             };
+            //postionRet.MarketSymbol
+            postionRet.Amount = GetRestorePerCount(postionRet.Amount, marketSymbol);
             return postionRet;
         }
         #endregion
@@ -1321,12 +1478,14 @@ namespace ExchangeSharp
                 size=(limit.Value.ToStringInvariant());
             }
             string periodString = PeriodSecondsToString(periodSeconds);
-            string url = $"/market/history/kline?period={periodString}&size={size}&symbol={marketSymbol}";
+            string url = $"/futures/usdt/candlesticks?contract={marketSymbol}&limit={size}&interval={periodString}";
             
             JToken allCandles = await MakeJsonRequestAsync<JToken>(url, BaseUrlV1, null);
             foreach (var token in allCandles)
             {
-                candles.Add(this.ParseCandle(token, marketSymbol, periodSeconds, "open", "high", "low", "close", "id", TimestampType.UnixSeconds, null, "vol"));
+                var c = this.ParseCandle(token, marketSymbol, periodSeconds, "o", "h", "l", "c", "t", TimestampType.UnixSeconds, null, "v");
+                c.Timestamp = c.Timestamp.AddHours(8);
+                candles.Add(c);
             }
             return candles;
         }

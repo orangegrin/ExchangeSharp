@@ -116,5 +116,33 @@ namespace ExchangeSharp
         Task<T> MakeJsonRequestAsync<T>(string url, string baseUrl = null, Dictionary<string, object> payload = null, string requestMethod = null);
 
         #endregion Methods
+
+
+        #region error
+
+        /// <summary>
+        /// 无效价格抛错
+        /// </summary>
+        /// <param name="ex"></param>
+        /// <returns></returns>
+        bool ErrorPlanceOrderPrice(Exception ex);
+
+
+        /// <summary>
+        /// 交易系统繁忙稍后再试
+        /// </summary>
+        /// <param name="ex"></param>
+        /// <returns></returns>
+        bool ErrorTradingSyatemIsBusy(Exception ex);
+
+        /// <summary>
+        /// 不需要关心的错误
+        /// </summary>
+        /// <param name="ex"></param>
+        /// <returns></returns>
+        bool ErrorNeedNotCareError(Exception ex);
+
+
+        #endregion
     }
 }

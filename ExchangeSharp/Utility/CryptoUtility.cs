@@ -26,6 +26,7 @@ using System.Security;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
+using System.Web;
 
 namespace ExchangeSharp
 {
@@ -456,6 +457,23 @@ namespace ExchangeSharp
                 .Replace("\r", "%0D")
                 .Replace("\n", "%0A")
                 .Replace(":", "%3A");
+
+        }
+        public static string HttpUrlEncode(this string str)
+        {
+            StringBuilder builder = new StringBuilder();
+            foreach (char c in str)
+            {
+                if (HttpUtility.UrlEncode(c.ToString()).Length > 1)
+                {
+                    builder.Append(HttpUtility.UrlEncode(c.ToString()).ToUpper());
+                }
+                else
+                {
+                    builder.Append(c);
+                }
+            }
+            return builder.ToString();
         }
 
         /// <summary>
@@ -494,12 +512,12 @@ namespace ExchangeSharp
                 decimal mod = value % stepSize.Value;
                 value -= mod;
             }
-           
+
             if (maxValue > 0)
             {
                 value = Math.Min(maxValue, value);
             }
-                
+
             value = Math.Max(minValue, value);
 
             return value.Normalize();
@@ -721,6 +739,7 @@ namespace ExchangeSharp
         public static async Task<string> WritePayloadJsonToRequestAsync(this IHttpWebRequest request, Dictionary<string, object> payload)
         {
             string json = GetJsonForPayload(payload);
+            //Logger.Debug(json);
             await WriteToRequestAsync(request, json);
             return json;
         }
@@ -757,7 +776,7 @@ namespace ExchangeSharp
             return string.Empty;
         }
 
-        public static string GetFormForPayloadNotChange(this IReadOnlyDictionary<string, object> payload, bool orderByKey = true )
+        public static string GetFormForPayloadNotChange(this IReadOnlyDictionary<string, object> payload, bool orderByKey = true)
         {
             if (payload != null && payload.Count != 0)
             {
@@ -1140,7 +1159,7 @@ namespace ExchangeSharp
         /// </summary>
         /// <param name="seconds">Seconds. Use 60 for minute, 3600 for hour, 3600*24 for day, 3600*24*30 for month.</param>
         /// <returns>Period string</returns>
-        public static string SecondsToPeriodStringLong(int seconds,string year = "year", string mon = "mon", string week = "week", string day = "day", string hour = "hour", string min = "min")
+        public static string SecondsToPeriodStringLong(int seconds, string year = "year", string mon = "mon", string week = "week", string day = "day", string hour = "hour", string min = "min")
         {
             const int minuteThreshold = 60;
             const int hourThreshold = 60 * 60;
@@ -1171,7 +1190,7 @@ namespace ExchangeSharp
             }
             else if (seconds >= minuteThreshold)
             {
-                return seconds / minuteThreshold + "min";
+                return seconds / minuteThreshold + min;
             }
             return seconds + "sec";
         }
@@ -1380,16 +1399,16 @@ namespace ExchangeSharp
         }
 
 
-       private static ulong[] Crc32Table;
+        private static ulong[] Crc32Table;
         //生成CRC32码表
         public static void GetCRC32Table()
         {
             ulong Crc;
             Crc32Table = new ulong[256];
             int i, j;
-            for(i = 0;i< 256; i++) 
+            for (i = 0; i < 256; i++)
             {
-                Crc = (ulong) i;
+                Crc = (ulong)i;
                 for (j = 8; j > 0; j--)
                 {
                     if ((Crc & 1) == 1)
@@ -1400,24 +1419,24 @@ namespace ExchangeSharp
                 Crc32Table[i] = Crc;
             }
         }
- 
+
         //获取字符串的CRC32校验值
         public static ulong GetCRC32Str(string sInputString)
         {
             //生成码表
-            if (Crc32Table==null)
+            if (Crc32Table == null)
             {
                 GetCRC32Table();
             }
-            
+
             byte[] buffer = System.Text.ASCIIEncoding.ASCII.GetBytes(sInputString);
             ulong value = 0xffffffff;
             int len = buffer.Length;
-            for (int i = 0; i<len; i++)
+            for (int i = 0; i < len; i++)
             {
                 value = (value >> 8) ^ Crc32Table[(value & 0xFF) ^ buffer[i]];
             }
-            return value ^ 0xffffffff; 
+            return value ^ 0xffffffff;
         }
 
         /// <summary>
@@ -1430,6 +1449,16 @@ namespace ExchangeSharp
         /// </summary>
         public static DateTime UtcNow { get { return utcNowFunc(); } }
 
+
+        /// <summary>
+        /// 返回中时间现在的
+        /// </summary>
+        /// <param name="dateTime"></param>
+        /// <returns></returns>
+        public static DateTime CNNow(this DateTime dateTime)
+        {
+            return DateTime.UtcNow.AddHours(8); 
+        }
         /// <summary>
         /// True if platform is Windows, false otherwise
         /// </summary>

@@ -93,8 +93,10 @@ namespace ExchangeSharp
         protected virtual Task<Dictionary<string, decimal>> OnGetAmountsAsync() => throw new NotImplementedException();
         protected virtual Task<decimal> OnGetWalletSummaryAsync(string symbol) => throw new NotImplementedException();
         protected virtual Task<Dictionary<string, decimal>> OnGetFeesAsync() => throw new NotImplementedException();
+        protected virtual Task<List<FundingPayment>> OnGetFundingRatesAsync(string markeySymbol,DateTime start,DateTime end) => throw new NotImplementedException();
         protected virtual Task<Dictionary<string, decimal>> OnGetAmountsAvailableToTradeAsync() => throw new NotImplementedException();
         protected virtual Task<ExchangeOrderResult> OnPlaceOrderAsync(ExchangeOrderRequest order) => throw new NotImplementedException();
+        protected virtual Task<ExchangeOrderResult> OnPlaceOrderDoubleSideAsync(ExchangeOrderRequest order,bool isOpen) => throw new NotImplementedException();
         protected virtual Task<ExchangeOrderResult[]> OnPlaceOrdersAsync(params ExchangeOrderRequest[] order) => throw new NotImplementedException();
         protected virtual Task<ExchangeOrderResult> OnGetOrderDetailsAsync(string orderId, string marketSymbol = null) => throw new NotImplementedException();
         protected virtual Task<IEnumerable<ExchangeOrderResult>> OnGetOpenOrderDetailsAsync(string marketSymbol = null) => throw new NotImplementedException();
@@ -116,6 +118,8 @@ namespace ExchangeSharp
         protected virtual IWebSocket OnGetCompletedOrderDetailsWebSocket(Action<ExchangeOrderResult> callback) => throw new NotImplementedException();
 
         #endregion API implementation
+
+
 
         #region Protected methods
         //protected abstract decimal PriceComplianceCheck(decimal price);
@@ -260,19 +264,23 @@ namespace ExchangeSharp
 
         /// <summary>
         /// Get an exchange API given an exchange name (see ExchangeName class)
+        /// 新增,同一个交易所可能有多个用户接入新增id
         /// </summary>
         /// <param name="exchangeName">Exchange name</param>
         /// <returns>Exchange API or null if not found</returns>
-        public static IExchangeAPI GetExchangeAPI(string exchangeName)
+        public static IExchangeAPI GetExchangeAPI(string exchangeName,string id="")
         {
             // note: this method will be slightly slow (milliseconds) the first time it is called and misses the cache
             // subsequent calls with cache hits will be nanoseconds
+            string exchangeKey = exchangeName + id;
             lock (apis)
             {
                 if (!apis.TryGetValue(exchangeName, out IExchangeAPI api))
                 {
                     throw new ArgumentException("No API available with name " + exchangeName);
                 }
+                apis.TryGetValue(exchangeKey, out api);
+
                 if (api == null)
                 {
                     // find an API with the right name
@@ -282,7 +290,7 @@ namespace ExchangeSharp
                         if (api.Name == exchangeName)
                         {
                             // found one with right name, add it to the API dictionary
-                            apis[exchangeName] = api;
+                            apis[exchangeKey] = api;
 
                             // break out, we are done
                             break;
@@ -506,7 +514,7 @@ namespace ExchangeSharp
         /// <returns>Collection of Currencies</returns>
         public virtual async Task<IReadOnlyDictionary<string, ExchangeCurrency>> GetCurrenciesAsync()
         {
-            return await Cache.CacheMethod(MethodCachePolicy, async () => await OnGetCurrenciesAsync(), nameof(GetCurrenciesAsync));
+            return  await OnGetCurrenciesAsync();
         }
 
         /// <summary>
@@ -626,7 +634,8 @@ namespace ExchangeSharp
         public virtual async Task<IEnumerable<ExchangeTrade>> GetRecentTradesAsync(string marketSymbol)
         {
             marketSymbol = NormalizeMarketSymbol(marketSymbol);
-            return await Cache.CacheMethod(MethodCachePolicy, async () => await OnGetRecentTradesAsync(marketSymbol), nameof(GetRecentTradesAsync), nameof(marketSymbol), marketSymbol);
+            return await OnGetRecentTradesAsync(marketSymbol);
+            //return await Cache.CacheMethod(MethodCachePolicy, async () =>, nameof(GetRecentTradesAsync), nameof(marketSymbol), marketSymbol);
         }
 
         /// <summary>
@@ -698,14 +707,20 @@ namespace ExchangeSharp
         {
             return await Cache.CacheMethod(MethodCachePolicy, async () => await OnGetFeesAsync(), nameof(GetFeesAync));
         }
+        public virtual async Task<List< FundingPayment>> GetFundingRatesAsync(string markeySymbol, DateTime start, DateTime end)
+        {
+            return  await OnGetFundingRatesAsync( markeySymbol,  start,  end);
+        }
 
+        
         /// <summary>
         /// Get amounts available to trade, symbol / amount dictionary
         /// </summary>
         /// <returns>Symbol / amount dictionary</returns>
         public virtual async Task<Dictionary<string, decimal>> GetAmountsAvailableToTradeAsync()
         {
-            return await Cache.CacheMethod(MethodCachePolicy, async () => await OnGetAmountsAvailableToTradeAsync(), nameof(GetAmountsAvailableToTradeAsync));
+            return await OnGetAmountsAvailableToTradeAsync();
+                //return await Cache.CacheMethod(MethodCachePolicy, async () => await OnGetAmountsAvailableToTradeAsync(), nameof(GetAmountsAvailableToTradeAsync));
         }
 
         /// <summary>
@@ -719,6 +734,18 @@ namespace ExchangeSharp
             await new SynchronizationContextRemover();
             order.MarketSymbol = NormalizeMarketSymbol(order.MarketSymbol);
             return await OnPlaceOrderAsync(order);
+        }
+        /// <summary>
+        /// 双仓 的开平
+        /// </summary>
+        /// <param name="order"></param>
+        /// <returns></returns>
+        public virtual async Task<ExchangeOrderResult> PlaceOrderDoubleSideAsync(ExchangeOrderRequest order,bool isOpen)
+        {
+            // *NOTE* do not wrap in CacheMethodCall
+            await new SynchronizationContextRemover();
+            order.MarketSymbol = NormalizeMarketSymbol(order.MarketSymbol);
+            return await OnPlaceOrderDoubleSideAsync(order,isOpen);
         }
 
         /// <summary>
@@ -757,7 +784,8 @@ namespace ExchangeSharp
         public virtual async Task<IEnumerable<ExchangeOrderResult>> GetOpenOrderDetailsAsync(string marketSymbol = null)
         {
             marketSymbol = NormalizeMarketSymbol(marketSymbol);
-            return await Cache.CacheMethod(MethodCachePolicy, async () => await OnGetOpenOrderDetailsAsync(marketSymbol), nameof(GetOpenOrderDetailsAsync), nameof(marketSymbol), marketSymbol);
+            return await OnGetOpenOrderDetailsAsync(marketSymbol);
+            //return await Cache.CacheMethod(MethodCachePolicy, async () => await OnGetOpenOrderDetailsAsync(marketSymbol), nameof(GetOpenOrderDetailsAsync), nameof(marketSymbol), marketSymbol);
         }
 
 
@@ -769,7 +797,8 @@ namespace ExchangeSharp
         public virtual async Task<IEnumerable<ExchangeOrderResult>> GetOpenProfitOrderDetailsAsync(string marketSymbol = null, OrderType orderType = OrderType.MarketIfTouched)
         {
             marketSymbol = NormalizeMarketSymbol(marketSymbol);
-            return await Cache.CacheMethod(MethodCachePolicy, async () => await OnGetOpenProfitOrderDetailsAsync(marketSymbol,orderType), nameof(GetOpenProfitOrderDetailsAsync), nameof(marketSymbol), marketSymbol);
+            return await OnGetOpenProfitOrderDetailsAsync(marketSymbol, orderType);
+            //return await Cache.CacheMethod(MethodCachePolicy, async () => await OnGetOpenProfitOrderDetailsAsync(marketSymbol, orderType), nameof(GetOpenProfitOrderDetailsAsync), nameof(marketSymbol), marketSymbol);
         }
 
         /// <summary>
@@ -781,8 +810,9 @@ namespace ExchangeSharp
         public virtual async Task<IEnumerable<ExchangeOrderResult>> GetCompletedOrderDetailsAsync(string marketSymbol = null, DateTime? afterDate = null)
         {
             marketSymbol = NormalizeMarketSymbol(marketSymbol);
-            return await Cache.CacheMethod(MethodCachePolicy, async () => (await OnGetCompletedOrderDetailsAsync(marketSymbol, afterDate)).ToArray(), nameof(GetCompletedOrderDetailsAsync),
-                nameof(marketSymbol), marketSymbol, nameof(afterDate), afterDate);
+            return await OnGetCompletedOrderDetailsAsync(marketSymbol, afterDate);
+            //return await Cache.CacheMethod(MethodCachePolicy, async () => (await OnGetCompletedOrderDetailsAsync(marketSymbol, afterDate)).ToArray(), nameof(GetCompletedOrderDetailsAsync),
+             //   nameof(marketSymbol), marketSymbol, nameof(afterDate), afterDate);
         }
 
         /// <summary>
@@ -839,7 +869,16 @@ namespace ExchangeSharp
             marketSymbol = NormalizeMarketSymbol(marketSymbol);
             return await Cache.CacheMethod(MethodCachePolicy, async () => await OnGetOpenPositionAsync(marketSymbol), nameof(GetOpenPositionAsync), nameof(marketSymbol), marketSymbol);
         }
-
+        /// <summary>
+        /// Get open margin position,double side
+        /// </summary>
+        /// <param name="marketSymbol">Symbol</param>
+        /// <returns>Open margin position ,buy side and sell side</returns>
+        public virtual async Task<List<ExchangeMarginPositionResult>> GetOpenPositionDoubleSideAsync(string marketSymbol)
+        {
+            marketSymbol = NormalizeMarketSymbol(marketSymbol);
+            return await GetOpenPositionDoubleSideAsync( marketSymbol);
+        }
         /// <summary>
         /// Close a margin position
         /// </summary>
@@ -945,8 +984,57 @@ namespace ExchangeSharp
             return amount;
         }
 
-        
+        #region error
+
+        /// <summary>
+        /// 无效价格抛错
+        /// </summary>
+        /// <param name="ex"></param>
+        /// <returns></returns>
+        public virtual bool ErrorPlanceOrderPrice(Exception ex)
+        {
+            Logger.Error("not implement !");
+            throw new Exception("not implement !");
+            return ex.ToString().Contains("");
+        }
+
+        /// <summary>
+        /// 交易系统繁忙稍后再试
+        /// </summary>
+        /// <param name="ex"></param>
+        /// <returns></returns>
+        public virtual bool ErrorTradingSyatemIsBusy(Exception ex)
+        {
+            Logger.Error("not implement !");
+            throw new Exception("not implement !");
+            return ex.ToString().Contains("");
+        }
+        /// <summary>
+        /// 不需要关心的错误
+        /// </summary>
+        /// <param name="ex"></param>
+        /// <returns></returns>
+        public virtual bool ErrorNeedNotCareError(Exception ex)
+        {
+            Logger.Error("not implement !");
+            throw new Exception("not implement !");
+            return ex.ToString().Contains("");
+        }
+        /// <summary>
+        /// 资金不够
+        /// <param name="ex"></param>
+        /// <returns></returns>
+        public virtual bool ErrorBalanceNotEnouthError(Exception ex)
+        {
+            Logger.Error("not implement !");
+            throw new Exception("not implement !");
+            return ex.ToString().Contains("");
+        }
+        #endregion
+
+
 
         #endregion Web Socket API
+
     }
 }

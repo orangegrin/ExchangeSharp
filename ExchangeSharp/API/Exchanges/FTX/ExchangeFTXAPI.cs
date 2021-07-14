@@ -58,7 +58,11 @@ namespace ExchangeSharp
         /// <returns></returns>
         private string GetClinetOrderID()
         {
-            return OrderIdStart + (OrderNum++);
+            lock(OrderIdStart)
+            {
+                Random r = new Random();
+                return OrderIdStart +"_"+r.Next(111111,999999) + (OrderNum++);
+            }
         }
         public override string ExchangeMarketSymbolToGlobalMarketSymbol(string marketSymbol)
         {
@@ -535,7 +539,15 @@ namespace ExchangeSharp
                 {
                     return Task.CompletedTask;
                 }
-
+                if (token.ToString().Contains(@"""type"": ""error"""))
+                {
+                    return Task.CompletedTask;
+                }
+                //Already subscribed
+                if (token.ToString().Contains("Already subscribed"))
+                {
+                    return Task.CompletedTask;
+                }
                 var action = token["type"].ToStringInvariant();
                 if (token["type"] != null && token["type"].ToStringInvariant() == "subscribed")
                 {  // subscription successful
@@ -759,26 +771,42 @@ namespace ExchangeSharp
             return totalAmount;
         }
 
+
         protected override async Task<Dictionary<string, decimal>> OnGetAmountsAvailableToTradeAsync()
         {
-            Dictionary<string, decimal> amounts = new Dictionary<string, decimal>();
+            /*
+            {[
+ {
+   "coin": "USD",
+   "free": -1.24133108,
+   "total": -1.24133108,
+   "usdValue": -1.24133108
+ },
+ {
+   "coin": "BTC",
+   "free": 0.04766072,
+   "total": 0.04794836,
+   "usdValue": 252.96543570105575
+ }
+]}
+            */
+
+            Dictionary<string, decimal> dic = new Dictionary<string, decimal>();
             var payload = await GetNoncePayloadAsync();
-            JToken token = await MakeJsonRequestAsync<JToken>($"/user/margin?currency=all", BaseUrl, payload);
+            JToken token = await MakeJsonRequestAsync<JToken>($"/wallet/balances", BaseUrl, payload);
+            decimal totalAmount = 0;
+            Logger.Debug(token.ToString());
+
             foreach (var item in token)
             {
-                var balance = item["availableMargin"].ConvertInvariant<decimal>();
-                var currency = item["currency"].ToStringInvariant();
-
-                if (amounts.ContainsKey(currency))
-                {
-                    amounts[currency] += balance;
-                }
-                else
-                {
-                    amounts[currency] = balance;
-                }
+                var coin = item["coin"].ToStringInvariant();
+                var count = item["usdValue"].ConvertInvariant<decimal>();
+                var free = item["free"].ConvertInvariant<decimal>();
+                totalAmount += count;
+                dic.Add(coin, free);
             }
-            return amounts;
+          
+            return dic;
         }
 
         protected override async Task<IEnumerable<ExchangeOrderResult>> OnGetOpenOrderDetailsAsync(string marketSymbol = null)
@@ -833,14 +861,35 @@ namespace ExchangeSharp
         {
             List<ExchangeOrderResult> orders = new List<ExchangeOrderResult>();
             Dictionary<string, object> payload = await GetNoncePayloadAsync();
-            string query = $"/order?filter={{\"orderID\": \"{orderId}\"}}";
+            string query = $"/orders/{orderId}";
+            JToken token = await MakeJsonRequestAsync<JToken>(query, BaseUrl, payload, "GET");
+
+               var order = ParseOrder(token);
+            
+
+            return order;
+        }
+
+        protected override async Task<IEnumerable<ExchangeOrderResult>> OnGetCompletedOrderDetailsAsync(string marketSymbol = null, DateTime? afterDate = null)
+        {
+            List<ExchangeOrderResult> orders = new List<ExchangeOrderResult>();
+            Dictionary<string, object> payload = await GetNoncePayloadAsync();
+            //string query = "/order";
+            //string query = "/fills?market=" + NormalizeMarketSymbol(marketSymbol);
+            //orders/history?market={market}
+            string query = "/orders/history?market=" + NormalizeMarketSymbol(marketSymbol);
             JToken token = await MakeJsonRequestAsync<JToken>(query, BaseUrl, payload, "GET");
             foreach (JToken order in token)
             {
-                orders.Add(ParseOrder(order));
+                var ord = ParseOrder(order);
+                if (ord.Result == ExchangeAPIOrderResult.Filled)
+                {
+                    orders.Add(ord);
+                }
+                // Logger.Debug(token.ToString());
             }
 
-            return orders[0];
+            return orders;
         }
         protected override async Task OnCancelOrderAsync(string orderId, string marketSymbol = null)
         {
@@ -870,11 +919,12 @@ namespace ExchangeSharp
             }
             try
             {
-                result = ParseOrder(token);
+                
                 if (token["success"].Equals("false"))
                 {
                     throw new Exception("CancelOrderEx:"+ token.ToString());
                 }
+                result = ParseOrder(token);
             }
             catch (Exception ex)
             {
@@ -895,13 +945,13 @@ namespace ExchangeSharp
                 payload["price"] = order.Price;
                 payload["size"] = order.Amount;
                 //payload["clientId"] = orderID;
-                token = await MakeJsonRequestAsync<JToken>("/orders/by_client_id/"+ orderID+"/modify", BaseUrl, payload, "POST");
+                token = await MakeJsonRequestAsync<JToken>("/orders/"+ orderID+"/modify", BaseUrl, payload, "POST");
+                //token = await MakeJsonRequestAsync<JToken>("/orders/by_client_id/"+ orderID+"/modify", BaseUrl, payload, "POST");
             }
             else
             {
-                
                 AddOrderToPayload(order, payload);
-                Logger.Debug("add order:" + payload["clientId"]);
+                //Logger.Debug("add order:" + payload["clientId"]);
                 token = await MakeJsonRequestAsync<JToken>("/orders", BaseUrl, payload, "POST");
             }
             return ParseOrder(token);
@@ -1052,20 +1102,27 @@ namespace ExchangeSharp
             if (order.StopPrice != 0)
                 payload["stopPx"] = order.StopPrice;
             //payload["displayQty"] = 0;//隐藏订单
-            
+
             //payload["ioc"] = true;//值全部成交
-            
+
             //if (order.ExtraParameters.TryGetValue("execInst", out var execInst))
             //{
             //    payload["execInst"] = execInst;
             //}
-//             if (order.ExtraParameters.TryGetValue("orderID", out var orderID))
-//             {
-//                 payload["clientId"] = orderID;
-//             }else
-            
-            payload["clientId"] = GetClinetOrderID();
-            
+            //             if (order.ExtraParameters.TryGetValue("orderID", out var orderID))
+            //             {
+            //                 payload["clientId"] = orderID;
+            //             }else
+            if (order.ExtraParameters.TryGetValue("reduceOnly", out var reduceOnly))
+            {
+                payload["reduceOnly"] = reduceOnly;
+            }
+            if (order.ExtraParameters.TryGetValue("postOnly", out var postOnly))
+            {
+                payload["postOnly"] = postOnly;
+            }
+            //payload["clientId"] = GetClinetOrderID();
+
 
         }
 
@@ -1094,11 +1151,11 @@ namespace ExchangeSharp
 }
             */
 
-            Logger.Debug("ParseOrder:"+ token.ToString());
+            //Logger.Debug("ParseOrder:"+ token.ToString());
             ExchangeOrderResult fullOrder;
             lock (fullOrders)
             {
-                bool had = fullOrders.TryGetValue(token["clientId"].ToStringInvariant(), out fullOrder);
+                bool had = fullOrders.TryGetValue(token["id"].ToStringInvariant(), out fullOrder);
                 ExchangeOrderResult result = new ExchangeOrderResult()
                 {
                     Amount = token["size"].ConvertInvariant<decimal>(),
@@ -1106,7 +1163,7 @@ namespace ExchangeSharp
                      Price = token["price"].ConvertInvariant<decimal>(),
                      IsBuy = token["side"].ToStringInvariant().EqualsWithOption("buy"),
                      OrderDate = token["createdAt"].ConvertInvariant<DateTime>(),
-                    OrderId = token["clientId"].ToStringInvariant(),
+                    OrderId = token["id"].ToStringInvariant(),
                      MarketSymbol = token["market"].ToStringInvariant(),
                      AveragePrice = token["price"].ConvertInvariant<decimal>(),
                      //StopPrice = token["stopPx"].ConvertInvariant<decimal>(),
@@ -1142,7 +1199,7 @@ namespace ExchangeSharp
                     {
                         case "new"://部分成交的时候 也是 在 new 状态
                             result.Result = ExchangeAPIOrderResult.Pending;
-                            Logger.Info("1ExchangeAPIOrderResult.Pending:" + token.ToString());
+                            //Logger.Info("1ExchangeAPIOrderResult.Pending:" + token.ToString());
 //                             if (token["triggered"].ToStringInvariant().Equals("StopOrderTriggered"))
 //                             {
 //                                 result.Result = ExchangeAPIOrderResult.TriggerPending;
@@ -1175,7 +1232,7 @@ namespace ExchangeSharp
                                 result.Result = ExchangeAPIOrderResult.Filled;
                             }
 
-                            Logger.Info("2ExchangeAPIOrderResult" + result.Result + ":" + token.ToString());
+                            //Logger.Info("2ExchangeAPIOrderResult" + result.Result + ":" + token.ToString());
                             break;
                         case "closed":
                             if (result.Amount == result.AmountFilled)
@@ -1183,11 +1240,11 @@ namespace ExchangeSharp
                                 result.Result = ExchangeAPIOrderResult.Filled;
                             else
                                 result.Result = ExchangeAPIOrderResult.Canceled;
-                            Logger.Info("4ExchangeAPIOrderResult:" + result.Result + ":" + token.ToString());
+                            //Logger.Info("4ExchangeAPIOrderResult:" + result.Result + ":" + token.ToString());
                             break;
                         default:
                             result.Result = ExchangeAPIOrderResult.Error;
-                            Logger.Info("5ExchangeAPIOrderResult.Error:" + token.ToString());
+                            //Logger.Info("5ExchangeAPIOrderResult.Error:" + token.ToString());
                             break;
                     }
                     if (token["triggered"] != null)
@@ -1256,6 +1313,7 @@ namespace ExchangeSharp
             }
         }
 
+
         public override async Task<IEnumerable<MarketCandle>> GetCandlesAsync(string marketSymbol, int periodSeconds, DateTime? startDate = null, DateTime? endDate = null, int? limit = null)
         {
             //window length in seconds. options: 15, 60, 300, 900, 3600, 14400, 86400
@@ -1274,13 +1332,38 @@ namespace ExchangeSharp
   ]
 }
              */
+//             var payload = await GetNoncePayloadAsync();
+//             string urld = $"/funding_rates?";
+// 
+//             urld += $"&start_time={Math.Floor(startDate.Value.UnixTimestampFromDateTimeSeconds())}";
+// 
+//             urld += $"&end_time={Math.Floor(endDate.Value.UnixTimestampFromDateTimeSeconds())}";
+// 
+//             urld += $"&future={marketSymbol}";
+//             var objj = await MakeJsonRequestAsync<JToken>(urld, BaseUrl,payload);
+// 
+//             Logger.Debug(objj.ToString());
+// 
+// 
+//             return null;
+
+
+
+
+
+
+
+
+
+
+
+
             decimal maxDatas = 3600;
             List<MarketCandle> candles = new List<MarketCandle>();
             //GET /markets/{market_name}/candles?resolution={resolution}&limit={limit}&start_time={start_time}&end_time={end_time}
             int daySeconds = 24 * 60 * 60;
             if (startDate != null && endDate!=null)
             {
-
                 int duringDays = Convert.ToInt32(Math.Ceiling((endDate.Value - startDate.Value).TotalDays));
                 int allSeconds = daySeconds * duringDays;
                 decimal allNum = allSeconds / periodSeconds;
@@ -1306,7 +1389,7 @@ namespace ExchangeSharp
 
                     url += $"&end_time={Math.Floor(theEndDateSeconds)}";
                     var obj = await MakeJsonRequestAsync<JToken>(url);
-                   // Logger.Debug(obj.ToString());
+                    //Logger.Debug(obj.ToString());
                     foreach (var t in obj)
                     {
                         candles.Add(this.ParseCandle(t, marketSymbol, periodSeconds, "open", "high", "low", "close", "startTime", TimestampType.Iso8601, "volume"));
@@ -1396,10 +1479,96 @@ namespace ExchangeSharp
 
             return book;
         }
+        public override bool ErrorTradingSyatemIsBusy(Exception ex)
+        {
+            return ex.ToString().Contains("Please try again later") || ex.ToString().Contains("Do not send more than") || ex.ToString().Contains("Try again") 
+                || ex.ToString().Contains("Please retry request") || ex.ToString().ToLower().Contains("try again") || ex.ToString().Contains("Not logged in") || ex.ToString().Contains("Rate limit exceeded") 
+                || ex.ToString().Contains("Please try again later") || ex.ToString().Contains("Do not send more than") || ex.ToString().Contains("Try again")
+                || ex.ToString().Contains("Please retry request") || ex.ToString().ToLower().Contains("try again");
+        }
+
+        protected override async Task<IReadOnlyDictionary<string, ExchangeCurrency>> OnGetCurrenciesAsync()
+        {
+            
+            var obj = await MakeJsonRequestAsync<JToken>($"/markets");
+
+
+            Dictionary<string, ExchangeCurrency> allCoins = new Dictionary<string, ExchangeCurrency>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var item in obj)
+            {
+                try
+                {
+                    FTXCurrency coin = JsonConvert.DeserializeObject<FTXCurrency>(item.ToString());
+                    allCoins[coin.name] = new ExchangeCurrency
+                    {
+                        CoinType = coin.type,
+
+                        FullName = coin.name,
+                        bid1 = coin.bid,
+                        ask1 = coin.ask,
+                    };
+                }
+                catch (Exception)
+                {
+
+                    Logger.Error("error" + item.ToString());
+                }
+               
+            }
+
+
+            //https://ftx.com/api/funding_payments?future=ETH-PERP
+            return allCoins;
+        }
+        protected override async Task<List<FundingPayment>> OnGetFundingRatesAsync(string markeySymbol, DateTime start, DateTime end)
+        {
+            List<FundingPayment> fundings = new List<FundingPayment>();
+            Dictionary<string, object> payload = await GetNoncePayloadAsync();
+
+            string url = $"/funding_rates?future={markeySymbol}&start_time={Math.Floor( start.UnixTimestampFromDateTimeSeconds())}&end_time={Math.Floor( end.UnixTimestampFromDateTimeSeconds())}";
+            var obj = await MakeJsonRequestAsync<JToken>(url,BaseUrl, payload);
+
+            foreach (var item in obj)
+            {
+                FundingPayment coin = new FundingPayment()
+                {
+                    MarketSymobl = item["future"].ToString(),
+                    payment = item["rate"].ConvertInvariant<decimal>(),
+                    Timestamp = item["time"].ConvertInvariant<DateTime>(),
+                
+                };
+                fundings.Add(coin);
+                //Logger.Debug(coin.ToString());
+            }
+            return fundings;
+        }
     }
 
     public partial class ExchangeName { public const string FTX = "FTX"; }
     public partial class ExchangeFee
     {
+    }
+
+    public class FTXCurrency
+    {
+        [JsonProperty("type")]
+        public string type { get; set; }
+        [JsonProperty("name")]
+        public string name { get; set; }
+        [JsonProperty("underlying")]
+        public string underlying { get; set; }
+        [JsonProperty("ask")]
+        public decimal ask { get; set; }
+        [JsonProperty("bid")]
+        public decimal bid { get; set; }
+
+        [JsonProperty("priceIncrement")]
+        public string priceIncrement { get; set; }
+
+        [JsonProperty("sizeIncrement")]
+        public string sizeIncrement { get; set; }
+
+       
     }
 }

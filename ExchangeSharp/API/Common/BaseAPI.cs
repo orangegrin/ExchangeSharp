@@ -226,6 +226,18 @@ namespace ExchangeSharp
         private readonly string[] resultKeys = new string[] { "result", "data", "return", "Result", "Data", "Return" };
 
         /// <summary>
+        /// 未找到要取消都订单
+        /// </summary>
+        /// <param name="ex"></param>
+        /// <returns></returns>
+        public virtual bool ErrorCancelOrderIdNotFound(Exception ex)
+        {
+            Logger.Error("not implement !");
+            throw new Exception("not implement !");
+            return ex.ToString().Contains("");
+        }
+
+        /// <summary>
         /// Static constructor
         /// </summary>
         static BaseAPI()
@@ -454,18 +466,26 @@ namespace ExchangeSharp
             await new SynchronizationContextRemover();
 
             string stringResult = await MakeRequestAsync(url, baseUrl: baseUrl, payload: payload, method: requestMethod);
-            T jsonResult = JsonConvert.DeserializeObject<T>(stringResult);
             try
             {
-                if (jsonResult is JToken token)
+                T jsonResult = JsonConvert.DeserializeObject<T>(stringResult);
+                try
                 {
-                    return (T)(object)CheckJsonResponse(token);
+                    if (jsonResult is JToken token)
+                    {
+                        return (T)(object)CheckJsonResponse(token);
+                    }
+                    return jsonResult;
                 }
-                return jsonResult;
+                catch (Exception ex)
+                {
+                    Logger.Error(ex.Message, "  payload:", payload, "  url:", url, "  baseUrl:", baseUrl, "  requestMethod:", requestMethod, ex.StackTrace);
+                    throw new APIException(ex.Message);
+                }
             }
             catch (Exception ex)
             {
-                Logger.Error(ex.Message, "  payload:", payload, "  url:", url, "  baseUrl:", baseUrl, "  requestMethod:", requestMethod,ex.StackTrace);
+                Logger.Error("stringResult :"+stringResult, ex.StackTrace);
                 throw new APIException(ex.Message);
             }
             
@@ -663,5 +683,13 @@ namespace ExchangeSharp
         /// Name
         /// </summary>
         public string Name { get; private set; }
+    }
+    /// <summary>
+    /// 交易所错误
+    /// </summary>
+    public enum ExchangeAPIError
+    {
+        OrderIdNotFund,
+        TradingSystemIsBusyTryLater,
     }
 }

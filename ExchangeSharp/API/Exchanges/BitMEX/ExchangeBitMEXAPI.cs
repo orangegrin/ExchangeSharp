@@ -46,7 +46,7 @@ namespace ExchangeSharp
             RequestContentType = "application/json";
             WebSocketOrderBookType = WebSocketOrderBookType.FullBookAlways;
 
-            RateLimit = new RateGate(300, TimeSpan.FromMinutes(5));
+            RateLimit = new RateGate(60, TimeSpan.FromMinutes(1));
         }
 
         public override string ExchangeMarketSymbolToGlobalMarketSymbol(string marketSymbol)
@@ -1252,8 +1252,33 @@ namespace ExchangeSharp
                 }
             }
         }
+        /*
+         * 
+         if (ex.ToString().Contains("overloaded") || ex.ToString().Contains("403 Forbidden") || ex.ToString().Contains("Bad Gateway") )
+                    {
+                        Logger.Error(Utils.Str2Json( "req", req.ToStringInvariant(), "ex", ex));
+                        await Task.Delay(2000);
+                    }
+                    else if (ex.ToString().Contains("RateLimitError"))
+                    {
+                        Logger.Error(Utils.Str2Json("req", req.ToStringInvariant(), "ex", ex));
+                        await Task.Delay(5000);
+                    }
+                    else
+                    {
+                        Logger.Error(Utils.Str2Json("ReverseOpenMarketOrder抛错" , ex.ToString()));
+                        throw ex;
+                    }
+        */
+        public override bool ErrorTradingSyatemIsBusy(Exception ex)
+        {
+            return ex.ToString().Contains("overloaded") || ex.ToString().Contains("403 Forbidden") || ex.ToString().Contains("Bad Gateway");
+        }
 
-
+        public override bool ErrorNeedNotCareError(Exception ex)
+        {
+            return ex.ToString().Contains("Invalid orderID") || ex.ToString().Contains("Not Found") ;
+        }
         //private decimal GetInstrumentTickSize(ExchangeMarket market)
         //{
         //    if (market.MarketName == "XBTUSD")

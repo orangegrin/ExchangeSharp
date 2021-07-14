@@ -427,7 +427,7 @@ namespace ExchangeSharp
         internal static ExchangeTicker ParseTicker(this ExchangeAPI api, JToken token, string marketSymbol,
             object askKey, object bidKey, object lastKey, object baseVolumeKey,
             object quoteVolumeKey = null, object timestampKey = null, TimestampType timestampType = TimestampType.None,
-            object baseCurrencyKey = null, object quoteCurrencyKey = null, object idKey = null)
+            object baseCurrencyKey = null, object quoteCurrencyKey = null, object idKey = null, object markPrice = null, object indexPrice = null)
         {
             if (token == null || !token.HasValues)
             {
@@ -476,6 +476,8 @@ namespace ExchangeSharp
                 Bid = bidValue.ConvertInvariant<decimal>(),
                 Id = (idKey == null ? null : token[idKey].ToStringInvariant()),
                 Last = last,
+                MarkPrice = (markPrice == null ? 0 : token[markPrice].ConvertInvariant<decimal>()),
+                IndexPrice = (indexPrice == null ? 0 : token[indexPrice].ConvertInvariant<decimal>()),
                 Volume = new ExchangeVolume
                 {
                     BaseCurrencyVolume = baseCurrencyVolume,

@@ -120,7 +120,16 @@ namespace ExchangeSharp
 				{
 					if (File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "nlog.config")))
                     {
-                        factory = LogManager.LoadConfiguration(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "nlog.config"));
+                        if (LogManager.Configuration == null)
+                        {
+                            factory = LogManager.LoadConfiguration(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "nlog.config"));
+                        }
+                        else
+                        {
+                            
+                            factory = LogManager.LogFactory;
+                        }
+
                     }
                     else
                     {
